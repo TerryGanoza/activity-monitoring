@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   calculateProjectProgress,
   calculateTeamMemberProgress,
+  createId,
   getRequirementStatuses,
   REQUIREMENT_STATUSES,
   REQUIREMENT_TYPES,
@@ -217,7 +218,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       return false;
     }
     const entry: RequirementLog = {
-      id: `reqlog-${crypto.randomUUID()}`,
+      id: createId("reqlog"),
       requirementId: requirement.id,
       memberId: member.id,
       memberName: member.name,
@@ -411,7 +412,7 @@ function RequirementEditor({
   onSave: (requirement: Requirement) => void;
 }) {
   const [form, setForm] = useState<Requirement>(requirement || {
-    id: `req-${crypto.randomUUID()}`,
+    id: createId("req"),
     projectId: project.id,
     title: "",
     description: "",

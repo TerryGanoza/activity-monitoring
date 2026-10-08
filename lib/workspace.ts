@@ -1,6 +1,17 @@
 export type MemberStatus = "Activo" | "En vacaciones" | "Inactivo";
 export type ProjectStatus = "En curso" | "En planificación" | "Completado";
 
+let generatedIdSequence = 0;
+
+export function createId(prefix: string): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `${prefix}-${globalThis.crypto.randomUUID()}`;
+  }
+
+  generatedIdSequence += 1;
+  return `${prefix}-${Date.now().toString(36)}-${generatedIdSequence.toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 export type TeamMember = {
   id: string;
   name: string;

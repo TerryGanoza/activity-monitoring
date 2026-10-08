@@ -3,7 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-import { calculateProjectProgress, calculateTeamMemberProgress } from "@/lib/workspace";
+import {
+  calculateProjectProgress,
+  calculateTeamMemberProgress,
+  createId,
+} from "@/lib/workspace";
 import type { LogEntry, Project, Requirement, TeamMember, WorkspaceData } from "@/lib/workspace";
 
 type IconName =
@@ -668,7 +672,7 @@ function MemberEditor({ member, projects, requirements, logEntries, saving, onCl
     area: member.area || "Ingeniería",
     project: projects.some((project) => project.name === member.project) ? member.project : "",
   } : {
-    id: `tm-${crypto.randomUUID()}`,
+    id: createId("tm"),
     name: "",
     role: "Backend Engineer",
     email: "",
@@ -691,7 +695,7 @@ function MemberEditor({ member, projects, requirements, logEntries, saving, onCl
     if (!member || !logNote.trim()) return;
     setSavingLog(true);
     const saved = await onAddLog({
-      id: `log-${crypto.randomUUID()}`,
+      id: createId("log"),
       memberId: member.id,
       date: new Date().toISOString().slice(0, 10),
       category: logCategory,
@@ -722,7 +726,7 @@ function MemberEditor({ member, projects, requirements, logEntries, saving, onCl
 
 function ProjectEditor({ project, requirements, saving, onClose, onSave }: { project: Project | null; requirements: Requirement[]; saving: boolean; onClose: () => void; onSave: (project: Project) => void }) {
   const [form, setForm] = useState<Project>(project || {
-    id: `pr-${crypto.randomUUID()}`,
+    id: createId("pr"),
     name: "",
     description: "",
     status: "En planificación",
