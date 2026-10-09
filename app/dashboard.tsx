@@ -304,6 +304,39 @@ export default function Dashboard() {
     void persistWorkspace({ ...workspace, members });
   }
 
+  function deleteMember(member: TeamMember) {
+    const assignedRequirements = workspace.requirements.filter(
+      (requirement) => requirement.assigneeId === member.id,
+    ).length;
+    const memberLogs = workspace.logEntries.filter(
+      (entry) => entry.memberId === member.id,
+    ).length;
+    const requirementLogs = workspace.requirementLogs.filter(
+      (entry) => entry.memberId === member.id,
+    ).length;
+
+    if (assignedRequirements || memberLogs || requirementLogs) {
+      const linkedItems = [
+        assignedRequirements ? `• ${assignedRequirements} requerimiento(s) asignado(s)` : "",
+        memberLogs ? `• ${memberLogs} seguimiento(s) individual(es)` : "",
+        requirementLogs ? `• ${requirementLogs} avance(s) guardado(s) en el historial de requerimientos` : "",
+      ].filter(Boolean).join("\n");
+      window.alert(
+        `No se puede eliminar a ${member.name} porque tiene información vinculada:\n\n${linkedItems}\n\nPara proteger el historial, primero reasigna sus requerimientos. Los seguimientos y avances históricos también deben resolverse antes de eliminar al miembro.`,
+      );
+      return;
+    }
+
+    if (!window.confirm(`¿Eliminar a ${member.name} del equipo? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    void persistWorkspace({
+      ...workspace,
+      members: workspace.members.filter((item) => item.id !== member.id),
+    }, false);
+  }
+
   function saveProject(project: Project) {
     project = {
       ...project,
@@ -526,14 +559,19 @@ export default function Dashboard() {
               {filteredMembers.length ? (
                 <div className="member-grid">
                   {filteredMembers.map((member, index) => (
-                    <button className="member-card" key={member.id} onClick={() => setMemberModal(member)} style={{ animationDelay: `${index * 45}ms` }}>
-                      <span className="member-card-top"><TeamAvatar member={member} large /><span className={`status-pill ${member.status === "Activo" ? "status-active" : member.status === "En vacaciones" ? "status-away" : "status-inactive"}`}><i />{member.status}</span></span>
-                      <strong className="member-name">{member.name}</strong><span className="member-role">{member.role}</span>
-                      <span className="member-divider" />
-                      <span className="member-meta"><span><Icon name="briefcase" size={15} />{member.project || "Sin proyecto"}</span><span><Icon name="activity" size={15} />{member.progress}% avance</span></span>
-                      <span className="member-progress"><i style={{ width: `${member.progress}%` }} /></span>
-                      <span className="member-card-link">Ver perfil <Icon name="chevron" size={15} /></span>
-                    </button>
+                    <article className="member-card" key={member.id} style={{ animationDelay: `${index * 45}ms` }}>
+                      <button className="member-card-open" type="button" onClick={() => setMemberModal(member)}>
+                        <span className="member-card-top"><TeamAvatar member={member} large /><span className={`status-pill ${member.status === "Activo" ? "status-active" : member.status === "En vacaciones" ? "status-away" : "status-inactive"}`}><i />{member.status}</span></span>
+                        <strong className="member-name">{member.name}</strong><span className="member-role">{member.role}</span>
+                        <span className="member-divider" />
+                        <span className="member-meta"><span><Icon name="briefcase" size={15} />{member.project || "Sin proyecto"}</span><span><Icon name="activity" size={15} />{member.progress}% avance</span></span>
+                        <span className="member-progress"><i style={{ width: `${member.progress}%` }} /></span>
+                      </button>
+                      <div className="member-card-actions">
+                        <button className="member-card-link" type="button" onClick={() => setMemberModal(member)}>Ver perfil <Icon name="chevron" size={15} /></button>
+                        <button className="member-delete-button" type="button" aria-label={`Eliminar a ${member.name}`} title="Eliminar miembro" onClick={() => deleteMember(member)} disabled={saving}><Icon name="trash" size={16} /></button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               ) : <EmptyState title="No encontramos a nadie" message="Prueba con otro término o agrega un nuevo miembro al equipo." action="Agregar miembro" onAction={() => setMemberModal("new")} />}
