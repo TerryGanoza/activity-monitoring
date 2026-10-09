@@ -108,6 +108,17 @@ export function calculateProjectProgress(requirements: readonly Requirement[]): 
   return Math.round((totalProgress / requirements.length) * 100);
 }
 
+export function calculateProjectTeamSize(
+  requirements: readonly Requirement[],
+  projectId: string,
+): number {
+  return new Set(
+    requirements
+      .filter((requirement) => requirement.projectId === projectId)
+      .map((requirement) => requirement.assigneeId),
+  ).size;
+}
+
 export function calculateTeamMemberProgress(
   requirements: readonly Requirement[],
   memberId: string,

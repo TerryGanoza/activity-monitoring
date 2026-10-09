@@ -3,6 +3,10 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import RequirementAlerts, {
+  getDaysUntilDeadline,
+  useCurrentDate,
+} from "@/app/requirement-alerts";
 import {
   calculateProjectProgress,
   calculateTeamMemberProgress,
@@ -37,7 +41,7 @@ const validationLabels = [
   ["ethicalHacking", "Ethical hacking"],
 ] as const;
 
-function Icon({ name, size = 17 }: { name: "arrow" | "back" | "calendar" | "check" | "chevron" | "clock" | "edit" | "plus" | "search" | "team"; size?: number }) {
+function Icon({ name, size = 17 }: { name: "arrow" | "back" | "calendar" | "check" | "chevron" | "clock" | "edit" | "plus" | "search" | "team" | "trash"; size?: number }) {
   const shared = {
     "aria-hidden": true as const,
     width: size,
@@ -60,6 +64,7 @@ function Icon({ name, size = 17 }: { name: "arrow" | "back" | "calendar" | "chec
     plus: <><path d="M12 5v14M5 12h14" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4 4" /></>,
     team: <><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 21v-2a4 4 0 0 0-3-3.9M16 3.2a4 4 0 0 1 0 7.6" /></>,
+    trash: <><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" /></>,
   };
   return <svg {...shared}>{paths[name]}</svg>;
 }
@@ -122,6 +127,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
   const [statusFilter, setStatusFilter] = useState<RequirementStatus | "Todos">("Todos");
   const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
   const [editingRequirement, setEditingRequirement] = useState<Requirement | "new" | null>(null);
+  const todayDate = useCurrentDate();
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +217,26 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
     void persist({ ...workspace, requirements });
   }
 
+  async function deleteRequirement(requirement: Requirement) {
+    const linkedLogCount = workspace.requirementLogs.filter(
+      (entry) => entry.requirementId === requirement.id,
+    ).length;
+    const linkedLogsMessage = linkedLogCount
+      ? ` También se eliminarán ${linkedLogCount} avance(s) asociado(s) de la bitácora.`
+      : "";
+    if (!window.confirm(`¿Eliminar el requerimiento «${requirement.title}»?${linkedLogsMessage} Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    await persist({
+      ...workspace,
+      requirements: workspace.requirements.filter((item) => item.id !== requirement.id),
+      requirementLogs: workspace.requirementLogs.filter(
+        (entry) => entry.requirementId !== requirement.id,
+      ),
+    });
+  }
+
   async function addDailyEntry(requirement: Requirement, status: RequirementStatus, note: string) {
     const member = workspace.members.find((item) => item.id === requirement.assigneeId);
     if (!member) {
@@ -235,6 +261,44 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       requirementLogs: [entry, ...workspace.requirementLogs],
     };
     const saved = await persist(nextWorkspace);
+    if (saved) setSelectedRequirement(updatedRequirement);
+    return saved;
+  }
+
+  async function editDailyEntry(requirement: Requirement, updatedEntry: RequirementLog) {
+    const previousEntry = workspace.requirementLogs.find((entry) => entry.id === updatedEntry.id);
+    if (!previousEntry || previousEntry.requirementId !== requirement.id) {
+      setError("No encontramos el avance que intentas editar.");
+      return false;
+    }
+
+    const requirementLogs = workspace.requirementLogs.map((entry) =>
+      entry.id === updatedEntry.id ? updatedEntry : entry,
+    );
+    const previousRequirementLogs = workspace.requirementLogs.filter(
+      (entry) => entry.requirementId === requirement.id,
+    );
+    const previousLatestEntry = [...previousRequirementLogs].sort((a, b) =>
+      b.date.localeCompare(a.date),
+    )[0];
+    const updatedRequirementLogs = requirementLogs
+      .filter((entry) => entry.requirementId === requirement.id)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const latestEntry = updatedRequirementLogs[0];
+    const editedEntryIsLatest =
+      previousLatestEntry?.id === updatedEntry.id ||
+      updatedEntry.date > (previousLatestEntry?.date || "");
+    const updatedRequirement = editedEntryIsLatest && latestEntry
+      ? { ...requirement, status: latestEntry.status }
+      : requirement;
+
+    const saved = await persist({
+      ...workspace,
+      requirements: workspace.requirements.map((item) =>
+        item.id === requirement.id ? updatedRequirement : item,
+      ),
+      requirementLogs,
+    });
     if (saved) setSelectedRequirement(updatedRequirement);
     return saved;
   }
@@ -297,7 +361,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
           <div className="requirements-table-scroll">
             <table className="requirements-table">
               <thead><tr>
-                <th>Requerimiento</th><th>Responsable · QE</th><th>Tipo OCD</th><th>Estado</th><th>Validaciones</th><th>Inicio</th><th>Deadline</th><th>Hora de pase</th><th>Último avance</th>
+                <th>Requerimiento</th><th>Responsable · QE</th><th>Tipo OCD</th><th>Estado</th><th>Validaciones</th><th>Inicio</th><th>Deadline</th><th>Hora de pase</th><th>Último avance</th><th aria-label="Acciones" />
               </tr></thead>
               <tbody>
                 {filteredRequirements.map((requirement) => {
@@ -308,8 +372,12 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
                     (latest, entry) => entry.date > latest ? entry.date : latest,
                     requirement.registeredAt,
                   );
-                  return <tr key={requirement.id} className="requirement-row" tabIndex={0} onClick={() => setSelectedRequirement(requirement)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedRequirement(requirement); } }}>
-                    <td><span className="requirement-cell-title">{requirement.title}</span><span className="requirement-cell-description">{requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
+                  const daysUntilDeadline = getDaysUntilDeadline(requirement.deadline, todayDate);
+                  const startsToday = requirement.startDate === todayDate && Boolean(todayDate);
+                  const deadlineIsNear = !startsToday && daysUntilDeadline !== null && daysUntilDeadline >= 0 && daysUntilDeadline <= 2;
+                  const rowAlert = startsToday ? " requirement-row-starting-today" : deadlineIsNear ? " requirement-row-deadline-soon" : "";
+                  return <tr key={requirement.id} className={`requirement-row${rowAlert}`} tabIndex={0} onClick={() => setSelectedRequirement(requirement)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedRequirement(requirement); } }}>
+                    <td><span className="requirement-cell-title">{requirement.title}{startsToday && <span className="requirement-date-alert requirement-date-alert-start">Inicia hoy</span>}{deadlineIsNear && <span className="requirement-date-alert requirement-date-alert-deadline">{daysUntilDeadline === 0 ? "Vence hoy" : daysUntilDeadline === 1 ? "Vence mañana" : "Vence en 2 días"}</span>}</span><span className="requirement-cell-description">{requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
                     <td><span className="requirement-people"><b className="avatar avatar-blue">{assignee ? initials(assignee.name) : "?"}</b><span><strong>{assignee?.name || "Sin responsable"}</strong><small>Dev · {assignee?.role || "Asignar miembro"}</small><small>QE · {requirement.qeAssignee || "Sin asignar"}</small></span></span></td>
                     <td><span className="requirement-type">{requirement.ocdType || "—"}</span></td>
                     <td><StatusPill status={requirement.status} /></td>
@@ -318,6 +386,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
                     <td><span className="requirement-date"><Icon name="calendar" size={13} />{formatDate(requirement.deadline)}</span></td>
                     <td>{requirement.passTime || "—"}</td>
                     <td>{formatDate(latestUpdateDate)}</td>
+                    <td className="requirement-actions-cell"><button className="requirement-delete-button" type="button" aria-label={`Eliminar requerimiento ${requirement.title}`} title="Eliminar requerimiento" disabled={saving} onClick={(event) => { event.stopPropagation(); void deleteRequirement(requirement); }} onKeyDown={(event) => event.stopPropagation()}><Icon name="trash" size={15} /></button></td>
                   </tr>;
                 })}
               </tbody>
@@ -335,6 +404,12 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
         </section>
       </div>
 
+      <RequirementAlerts
+        requirements={workspace.requirements}
+        members={workspace.members}
+        projects={workspace.projects}
+      />
+
       {selectedRequirement && <RequirementLogModal
         requirement={selectedRequirement}
         member={workspace.members.find((item) => item.id === selectedRequirement.assigneeId)}
@@ -343,6 +418,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
         onClose={() => setSelectedRequirement(null)}
         onEdit={() => { setEditingRequirement(selectedRequirement); setSelectedRequirement(null); }}
         onAddEntry={addDailyEntry}
+        onEditEntry={editDailyEntry}
       />}
       {editingRequirement && <RequirementEditor
         project={project}
@@ -365,6 +441,7 @@ function RequirementLogModal({
   onClose,
   onEdit,
   onAddEntry,
+  onEditEntry,
 }: {
   requirement: Requirement;
   member: TeamMember | undefined;
@@ -373,9 +450,14 @@ function RequirementLogModal({
   onClose: () => void;
   onEdit: () => void;
   onAddEntry: (requirement: Requirement, status: RequirementStatus, note: string) => Promise<boolean>;
+  onEditEntry: (requirement: Requirement, entry: RequirementLog) => Promise<boolean>;
 }) {
   const [status, setStatus] = useState(requirement.status);
   const [note, setNote] = useState("");
+  const [editingLogId, setEditingLogId] = useState("");
+  const [editStatus, setEditStatus] = useState<RequirementStatus>(requirement.status);
+  const [editDate, setEditDate] = useState("");
+  const [editNote, setEditNote] = useState("");
   const availableStatuses = getRequirementStatuses(requirement.ocdType);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -384,13 +466,30 @@ function RequirementLogModal({
       if (saved) setNote("");
     });
   }
+  function startEditingEntry(entry: RequirementLog) {
+    setEditingLogId(entry.id);
+    setEditStatus(entry.status);
+    setEditDate(entry.date);
+    setEditNote(entry.note);
+  }
+  async function saveEditedEntry(event: FormEvent<HTMLFormElement>, entry: RequirementLog) {
+    event.preventDefault();
+    if (!editNote.trim()) return;
+    const saved = await onEditEntry(requirement, {
+      ...entry,
+      date: editDate,
+      status: editStatus,
+      note: editNote.trim(),
+    });
+    if (saved) setEditingLogId("");
+  }
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="modal-card requirement-log-modal" role="dialog" aria-modal="true" aria-label={`Bitácora de ${requirement.title}`}>
     <div className="modal-heading"><div><span className="eyebrow">BITÁCORA DIARIA · {requirement.title}</span><h2>Seguimiento del requerimiento</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar">×</button></div>
     <div className="requirement-detail-meta"><span><small>Responsable</small><strong>{member?.name || "Sin responsable"}</strong></span><span><small>Estado actual</small><StatusPill status={requirement.status} /></span><span><small>Tipo OCD</small><strong>{requirement.ocdType || "—"}</strong></span><span><small>Deadline</small><strong>{formatDate(requirement.deadline)}</strong></span></div>
     <p className="requirement-detail-description">{requirement.description || "Sin descripción adicional."}</p>
     <div className="requirement-detail-actions"><span><strong>QE asignado:</strong> {requirement.qeAssignee || "Sin asignar"}</span><button className="button button-outline" onClick={onEdit}><Icon name="edit" size={15} /> Editar requerimiento</button></div>
     <form className="daily-update-form" onSubmit={submit}><div className="logbook-heading"><div><span className="eyebrow">REGISTRO DE HOY · {formatDate(today())}</span><h3>¿Qué avanzó hoy?</h3></div></div><div className="daily-update-fields"><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label><label className="daily-note-field">Avance o impedimento<textarea value={note} onChange={(event) => setNote(event.target.value)} required maxLength={2000} rows={3} placeholder="Describe lo que avanzaste, los acuerdos o los bloqueos de hoy." /></label></div><div className="daily-update-footer"><span>Este registro quedará asociado a {member?.name || "la persona responsable"}.</span><button className="button button-primary" type="submit" disabled={saving || !member || !note.trim()}><Icon name="plus" size={15} />{saving ? "Guardando..." : "Guardar avance del día"}</button></div></form>
-    <section className="requirement-history"><div className="logbook-heading"><div><span className="eyebrow">HISTORIAL CRONOLÓGICO</span><h3>Actualizaciones anteriores</h3></div><span className="logbook-count">{logs.length} registros</span></div><div className="logbook-list">{logs.map((entry) => <article className="logbook-entry" key={entry.id}><i className="logbook-marker" /><div><span><strong>{entry.memberName} · {entry.status}</strong><time>{formatDate(entry.date)}</time></span><p>{entry.note}</p></div></article>)}{!logs.length && <p className="logbook-empty">Este requerimiento aún no tiene avances. Registra el primero arriba.</p>}</div></section>
+    <section className="requirement-history"><div className="logbook-heading"><div><span className="eyebrow">HISTORIAL CRONOLÓGICO</span><h3>Actualizaciones anteriores</h3></div><span className="logbook-count">{logs.length} registros</span></div><div className="logbook-list">{logs.map((entry) => <article className="logbook-entry requirement-log-entry" key={entry.id}><i className="logbook-marker" /><div className="requirement-log-entry-content">{editingLogId === entry.id ? <form className="requirement-log-edit-form" onSubmit={(event) => void saveEditedEntry(event, entry)}><div className="requirement-log-edit-fields"><label>Fecha<input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} required /></label><label>Estado<select value={editStatus} onChange={(event) => setEditStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label></div><label className="requirement-log-edit-note">Avance o impedimento<textarea value={editNote} onChange={(event) => setEditNote(event.target.value)} required maxLength={2000} rows={3} /></label><div className="requirement-log-edit-actions"><button className="button button-outline" type="button" onClick={() => setEditingLogId("")} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !editNote.trim()}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form> : <><span><strong>{entry.memberName} · {entry.status}</strong><time>{formatDate(entry.date)}</time></span><p>{entry.note}</p></>}</div>{editingLogId !== entry.id && <button className="logbook-edit-button" type="button" aria-label={`Editar avance de ${entry.memberName} del ${formatDate(entry.date)}`} title="Editar avance" onClick={() => startEditingEntry(entry)} disabled={saving || Boolean(editingLogId)}><Icon name="edit" size={14} /></button>}</article>)}{!logs.length && <p className="logbook-empty">Este requerimiento aún no tiene avances. Registra el primero arriba.</p>}</div></section>
   </section></div>;
 }
 

@@ -11,7 +11,9 @@ Abre la carpeta del proyecto en VS Code y, en una terminal de PowerShell, ejecut
 npm.cmd run dev
 ```
 
-Deja la terminal abierta mientras trabajas y visita [http://localhost:3000](http://localhost:3000). Para detener el servidor, pulsa `Ctrl+C`. La próxima vez que quieras usar la aplicación, vuelve a ejecutar el comando. Si todavía no has instalado las dependencias, ejecuta primero `npm.cmd install`.
+Deja la terminal abierta mientras trabajas y visita [http://localhost:3000](http://localhost:3000). 
+Para trabajar de forma externa entra a http://192.168.18.24:3000.
+Para detener el servidor, pulsa `Ctrl+C`. La próxima vez que quieras usar la aplicación, vuelve a ejecutar el comando. Si todavía no has instalado las dependencias, ejecuta primero `npm.cmd install`.
 
 Requisitos: Node.js 22.13 o posterior y npm.
 

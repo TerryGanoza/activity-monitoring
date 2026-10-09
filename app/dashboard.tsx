@@ -5,10 +5,13 @@ import Link from "next/link";
 
 import {
   calculateProjectProgress,
+  calculateProjectTeamSize,
   calculateTeamMemberProgress,
   createId,
 } from "@/lib/workspace";
 import type { LogEntry, Project, Requirement, TeamMember, WorkspaceData } from "@/lib/workspace";
+import RequirementAlerts from "@/app/requirement-alerts";
+import ProjectStatusReport from "@/app/project-status-report";
 
 type IconName =
   | "activity"
@@ -135,6 +138,7 @@ export default function Dashboard() {
   const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [search, setSearch] = useState("");
+  const [projectSearch, setProjectSearch] = useState("");
   const [memberModal, setMemberModal] = useState<TeamMember | "new" | null>(null);
   const [projectModal, setProjectModal] = useState<Project | "new" | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -189,6 +193,35 @@ export default function Dashboard() {
           workspace.projects.length,
       )
     : 0;
+  const projectSearchResults = useMemo(() => {
+    const normalizedSearch = projectSearch.trim().toLocaleLowerCase();
+    return workspace.projects.flatMap((project) => {
+      const projectRequirements = workspace.requirements.filter(
+        (requirement) => requirement.projectId === project.id,
+      );
+      if (!normalizedSearch) {
+        return [{ project, matchingRequirements: [] as Requirement[] }];
+      }
+
+      const projectMatches = `${project.name} ${project.description}`
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+      const matchingRequirements = projectRequirements.filter((requirement) => {
+        const member = workspace.members.find((item) => item.id === requirement.assigneeId);
+        return `${requirement.title} ${requirement.description} ${member?.name || ""} ${member?.role || ""} ${requirement.qeAssignee} ${requirement.ocdType} ${requirement.status}`
+          .toLocaleLowerCase()
+          .includes(normalizedSearch);
+      });
+
+      if (!projectMatches && !matchingRequirements.length) return [];
+      return [{
+        project,
+        matchingRequirements: matchingRequirements.length
+          ? matchingRequirements
+          : projectRequirements,
+      }];
+    });
+  }, [projectSearch, workspace.members, workspace.projects, workspace.requirements]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -272,6 +305,10 @@ export default function Dashboard() {
   }
 
   function saveProject(project: Project) {
+    project = {
+      ...project,
+      team: calculateProjectTeamSize(workspace.requirements, project.id),
+    };
     const previousProject = workspace.projects.find((item) => item.id === project.id);
     const projects = previousProject
       ? workspace.projects.map((item) => (item.id === project.id ? project : item))
@@ -465,6 +502,7 @@ export default function Dashboard() {
             <DashboardHome
               members={workspace.members}
               projects={workspace.projects}
+              requirements={workspace.requirements}
               logEntries={workspace.logEntries}
               activeMembers={activeMembers}
               inProgressProjects={inProgressProjects}
@@ -508,11 +546,43 @@ export default function Dashboard() {
                 <div><span className="eyebrow">LO QUE ESTAMOS CONSTRUYENDO</span><h1>Proyectos<span className="heading-period">.</span></h1><p>Una vista clara de cada iniciativa y del camino que falta recorrer.</p></div>
                 <button className="button button-primary" onClick={() => setProjectModal("new")}><Icon name="plus" size={18} /> Nuevo proyecto</button>
               </div>
+              <ProjectStatusReport
+                requirements={workspace.requirements}
+                requirementLogs={workspace.requirementLogs}
+                projects={workspace.projects}
+                members={workspace.members}
+              />
               <div className="project-overview-strip">
                 <span><b>{workspace.projects.length}</b> iniciativas en total</span><span><i className="legend-dot legend-blue" />En curso <b>{inProgressProjects}</b></span><span><i className="legend-dot legend-orange" />En planificación <b>{workspace.projects.filter((project) => project.status === "En planificación").length}</b></span><span><i className="legend-dot legend-green" />Completados <b>{workspace.projects.filter((project) => project.status === "Completado").length}</b></span>
               </div>
+              <div className="project-search-toolbar">
+                <label className="search-box">
+                  <Icon name="search" size={18} />
+                  <input
+                    aria-label="Buscar proyectos por team member o requerimiento"
+                    placeholder="Buscar por team member, requerimiento o proyecto..."
+                    value={projectSearch}
+                    onChange={(event) => setProjectSearch(event.target.value)}
+                  />
+                  {projectSearch && (
+                    <button
+                      className="project-search-clear"
+                      type="button"
+                      aria-label="Limpiar búsqueda de proyectos"
+                      onClick={() => setProjectSearch("")}
+                    >
+                      <Icon name="close" size={15} />
+                    </button>
+                  )}
+                </label>
+                <span className="result-count">
+                  {projectSearch
+                    ? `${projectSearchResults.length} ${projectSearchResults.length === 1 ? "proyecto encontrado" : "proyectos encontrados"}`
+                    : "Busca una persona o requerimiento para ver dónde participa"}
+                </span>
+              </div>
               <div className="project-list">
-                {workspace.projects.map((project, index) => (
+                {projectSearchResults.map(({ project, matchingRequirements }, index) => (
                   <article
                     className="project-card"
                     key={project.id}
@@ -520,7 +590,7 @@ export default function Dashboard() {
                   >
                     <Link className="project-card-content" href={`/projects/${encodeURIComponent(project.id)}`} aria-label={`Abrir requerimientos de ${project.name}`}>
                       <span className={`project-symbol project-${project.color}`}><Icon name="briefcase" size={21} /></span>
-                      <span className="project-info"><span className="project-title-row"><strong>{project.name}</strong><span className={`status-pill ${project.status === "En curso" ? "status-active" : project.status === "Completado" ? "status-done" : "status-planning"}`}><i />{project.status}</span></span><span className="project-description">{project.description}</span><span className="project-detail-row"><span><Icon name="team" size={15} />{project.team} personas</span><span><Icon name="calendar" size={15} />Entrega: {formatDate(project.dueDate)}</span></span></span>
+                      <span className="project-info"><span className="project-title-row"><strong>{project.name}</strong><span className={`status-pill ${project.status === "En curso" ? "status-active" : project.status === "Completado" ? "status-done" : "status-planning"}`}><i />{project.status}</span></span><span className="project-description">{project.description}</span><span className="project-detail-row"><span><Icon name="team" size={15} />{calculateProjectTeamSize(workspace.requirements, project.id)} personas</span><span><Icon name="calendar" size={15} />Entrega: {formatDate(project.dueDate)}</span></span>{projectSearch.trim() && <span className="project-search-matches"><strong>{matchingRequirements.length ? `${matchingRequirements.length} requerimiento${matchingRequirements.length === 1 ? "" : "s"} relacionado${matchingRequirements.length === 1 ? "" : "s"}` : "Sin requerimientos registrados"}</strong>{matchingRequirements.slice(0, 4).map((requirement) => { const member = workspace.members.find((item) => item.id === requirement.assigneeId); return <span className="project-search-match" key={requirement.id}><span>{requirement.title}</span><small>{member?.name || "Sin responsable"} · {requirement.status}</small></span>; })}{matchingRequirements.length > 4 && <small className="project-search-more">y {matchingRequirements.length - 4} más…</small>}</span>}</span>
                       <span className="project-progress-wrap"><span className="project-progress-number">{project.progress}<small>%</small></span><span className="project-progress-track"><i style={{ width: `${project.progress}%` }} /></span><small>abrir detalle</small></span>
                     </Link>
                     <span className="project-actions">
@@ -545,11 +615,18 @@ export default function Dashboard() {
                   </article>
                 ))}
                 {!workspace.projects.length && <EmptyState title="Tu próximo gran proyecto empieza aquí" message="Crea una iniciativa para organizar el trabajo y seguir su progreso." action="Crear proyecto" onAction={() => setProjectModal("new")} />}
+                {workspace.projects.length > 0 && !projectSearchResults.length && <EmptyState title="No encontramos coincidencias" message="Prueba con otro nombre de team member o requerimiento." action="Limpiar búsqueda" onAction={() => setProjectSearch("")} />}
               </div>
             </section>
           )}
         </div>
       </section>
+
+      <RequirementAlerts
+        requirements={workspace.requirements}
+        members={workspace.members}
+        projects={workspace.projects}
+      />
 
       {memberModal && <MemberEditor member={memberModal === "new" ? null : memberModal} projects={workspace.projects} requirements={workspace.requirements} logEntries={workspace.logEntries.filter((entry) => entry.memberId === (memberModal === "new" ? "" : memberModal.id))} saving={saving} onClose={() => setMemberModal(null)} onSave={saveMember} onAddLog={async (entry) => persistWorkspace({ ...workspace, logEntries: [entry, ...workspace.logEntries] }, false)} onDeleteLog={async (entryId) => persistWorkspace({ ...workspace, logEntries: workspace.logEntries.filter((entry) => entry.id !== entryId) }, false)} />}
       {projectModal && <ProjectEditor project={projectModal === "new" ? null : projectModal} requirements={workspace.requirements} saving={saving} onClose={() => setProjectModal(null)} onSave={saveProject} />}
@@ -560,6 +637,7 @@ export default function Dashboard() {
 function DashboardHome({
   members,
   projects,
+  requirements,
   logEntries,
   activeMembers,
   inProgressProjects,
@@ -570,6 +648,7 @@ function DashboardHome({
 }: {
   members: TeamMember[];
   projects: Project[];
+  requirements: Requirement[];
   logEntries: LogEntry[];
   activeMembers: number;
   inProgressProjects: number;
@@ -627,7 +706,7 @@ function DashboardHome({
           <div className="panel-heading"><div><span className="eyebrow">INICIATIVAS EN CURSO</span><h2>Proyectos que avanzan</h2></div><button className="text-link" onClick={() => onNavigate("projects")}>Ver todos <Icon name="arrow" size={14} /></button></div>
           <div className="mini-project-list">
             {openProjects.map((project) => (
-              <div className="mini-project" key={project.id}><span className={`project-symbol project-${project.color}`}><Icon name="briefcase" size={17} /></span><span className="mini-project-name"><strong>{project.name}</strong><small>{project.team} personas</small></span><span className="mini-progress"><i style={{ width: `${project.progress}%` }} /></span><strong className="mini-progress-value">{project.progress}%</strong></div>
+              <div className="mini-project" key={project.id}><span className={`project-symbol project-${project.color}`}><Icon name="briefcase" size={17} /></span><span className="mini-project-name"><strong>{project.name}</strong><small>{calculateProjectTeamSize(requirements, project.id)} personas</small></span><span className="mini-progress"><i style={{ width: `${project.progress}%` }} /></span><strong className="mini-progress-value">{project.progress}%</strong></div>
             ))}
             {!openProjects.length && <p className="empty-inline">Todavía no hay proyectos en curso.</p>}
           </div>
@@ -744,7 +823,7 @@ function ProjectEditor({ project, requirements, saving, onClose, onSave }: { pro
   }
   return <Modal title={project ? "Detalles del proyecto" : "Nuevo proyecto"} onClose={onClose}><form className="editor-form" onSubmit={submit}>
     <div className="editor-profile-preview"><span className={`project-symbol project-${form.color}`}><Icon name="briefcase" size={21} /></span><span><strong>{form.name || "Nombre del proyecto"}</strong><small>{form.status}</small></span></div>
-    <div className="form-grid"><label className="full-field">Nombre del proyecto<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={120} placeholder="Ej. Nueva experiencia móvil" /></label><label className="full-field">Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={500} rows={3} placeholder="¿Qué queremos lograr?" /></label><label>Estado<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as Project["status"] })}><option>En planificación</option><option>En curso</option><option>Completado</option></select></label><label>Fecha de entrega<input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} required /></label><label>Personas en el equipo<input type="number" min="0" max="500" value={form.team} onChange={(event) => setForm({ ...form, team: Number(event.target.value) })} /></label><div className="full-field"><span className="validation-form-label">Avance general calculado</span><div className="project-editor-progress"><strong>{calculatedProgress}%</strong><span className="project-progress-track"><i style={{ width: `${calculatedProgress}%` }} /></span></div></div></div>
+    <div className="form-grid"><label className="full-field">Nombre del proyecto<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={120} placeholder="Ej. Nueva experiencia móvil" /></label><label className="full-field">Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={500} rows={3} placeholder="¿Qué queremos lograr?" /></label><label>Estado<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as Project["status"] })}><option>En planificación</option><option>En curso</option><option>Completado</option></select></label><label>Fecha de entrega<input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} required /></label><div className="full-field"><span className="validation-form-label">Personas asignadas a requerimientos</span><div className="project-editor-progress"><strong>{calculateProjectTeamSize(requirements, form.id)}</strong><span className="validation-form-label">integrantes distintos asignados a este proyecto</span></div></div><div className="full-field"><span className="validation-form-label">Avance general calculado</span><div className="project-editor-progress"><strong>{calculatedProgress}%</strong><span className="project-progress-track"><i style={{ width: `${calculatedProgress}%` }} /></span></div></div></div>
     <div className="modal-actions"><button className="button button-outline" type="button" onClick={onClose}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? "Guardando..." : project ? "Guardar cambios" : "Crear proyecto"}</button></div>
   </form></Modal>;
 }
