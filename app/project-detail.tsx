@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import RequirementAlerts, {
+  DailyUpdateNotifications,
   getDaysUntilDeadline,
   useCurrentDate,
 } from "@/app/requirement-alerts";
@@ -108,26 +109,24 @@ function StatusPill({ status }: { status: RequirementStatus }) {
 
 export default function ProjectDetail({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlProjectSearch = searchParams.get("projectSearch") || "";
   function goBackToProjects() {
-    if (
-      window.history.length > 1 &&
-      document.referrer.startsWith(window.location.origin)
-    ) {
-      router.back();
-    } else {
-      router.push("/");
-    }
+    const params = new URLSearchParams();
+    params.set("page", "projects");
+    if (search.trim()) params.set("projectSearch", search.trim());
+    router.push(`/?${params.toString()}`);
   }
   const [workspace, setWorkspace] = useState<WorkspaceData>(emptyWorkspace);
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<RequirementStatus | "Todos">("Todos");
   const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
   const [editingRequirement, setEditingRequirement] = useState<Requirement | "new" | null>(null);
   const todayDate = useCurrentDate();
+  const search = urlProjectSearch;
 
   useEffect(() => {
     let cancelled = false;
@@ -163,16 +162,40 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
   const projectRequirements = workspace.requirements.filter((item) => item.projectId === projectId);
   const filteredRequirements = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
-    return projectRequirements.filter((requirement) => {
+    const matchesRequirement = (requirement: Requirement) => {
       const member = workspace.members.find((item) => item.id === requirement.assigneeId);
-      const matchesTerm =
+      return (
         !term ||
-        `${requirement.title} ${requirement.description} ${member?.name || ""} ${requirement.qeAssignee} ${requirement.ocdType}`
+        `${requirement.title} ${requirement.description} ${member?.name || ""} ${member?.role || ""} ${requirement.qeAssignee} ${requirement.ocdType} ${requirement.status}`
           .toLocaleLowerCase()
-          .includes(term);
-      return matchesTerm && (statusFilter === "Todos" || requirement.status === statusFilter);
-    });
-  }, [projectRequirements, search, statusFilter, workspace.members]);
+          .includes(term)
+      );
+    };
+    const projectMatches =
+      Boolean(term) &&
+      `${project?.name || ""} ${project?.description || ""}`
+        .toLocaleLowerCase()
+        .includes(term);
+    const matchingRequirements = projectRequirements.filter(matchesRequirement);
+    const searchResults = projectMatches && !matchingRequirements.length
+      ? projectRequirements
+      : matchingRequirements;
+    return searchResults.filter(
+      (requirement) => statusFilter === "Todos" || requirement.status === statusFilter,
+    );
+  }, [project, projectRequirements, search, statusFilter, workspace.members]);
+
+  function updateRequirementSearch(value: string) {
+    const params = new URLSearchParams(window.location.search);
+    if (value.trim()) params.set("projectSearch", value);
+    else params.delete("projectSearch");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    );
+  }
 
   async function persist(nextWorkspace: WorkspaceData) {
     setSaving(true);
@@ -328,7 +351,16 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
     <main className="project-detail-shell">
       <header className="topbar">
         <button className="back-link" onClick={goBackToProjects}><Icon name="back" /> Proyectos</button>
-        <div className="topbar-actions"><span className="today-date"><Icon name="calendar" size={16} />{new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</span><span className="profile-avatar">{initials(userEmail.split("@")[0])}</span></div>
+        <div className="topbar-actions">
+          <span className="today-date"><Icon name="calendar" size={16} />{new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</span>
+          <DailyUpdateNotifications
+            requirements={workspace.requirements}
+            requirementLogs={workspace.requirementLogs}
+            members={workspace.members}
+            projects={workspace.projects}
+          />
+          <span className="profile-avatar">{initials(userEmail.split("@")[0])}</span>
+        </div>
       </header>
       <div className="content-wrap project-detail-content">
         {error && <div className="notice notice-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Cerrar">×</button></div>}
@@ -354,7 +386,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
             <button className="button button-primary" onClick={() => setEditingRequirement("new")}><Icon name="plus" /> Nuevo requerimiento</button>
           </div>
           <div className="requirements-toolbar">
-            <label className="search-box"><Icon name="search" /><input aria-label="Buscar requerimientos" placeholder="Buscar requerimiento, responsable o QA..." value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+            <label className="search-box"><Icon name="search" /><input aria-label="Buscar requerimientos" placeholder="Buscar requerimiento, responsable o QA..." value={search} onChange={(event) => updateRequirementSearch(event.target.value)} /></label>
             <select className="requirements-status-filter" aria-label="Filtrar requerimientos por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as RequirementStatus | "Todos")}><option>Todos</option>{requirementStatuses.map((status) => <option key={status}>{status}</option>)}</select>
             <span className="requirements-count">{filteredRequirements.length} de {projectRequirements.length}</span>
           </div>
@@ -373,11 +405,15 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
                     requirement.registeredAt,
                   );
                   const daysUntilDeadline = getDaysUntilDeadline(requirement.deadline, todayDate);
+                  const deadlineIsPast =
+                    requirement.status !== "Done" &&
+                    daysUntilDeadline !== null &&
+                    daysUntilDeadline < 0;
                   const startsToday = requirement.startDate === todayDate && Boolean(todayDate);
-                  const deadlineIsNear = !startsToday && daysUntilDeadline !== null && daysUntilDeadline >= 0 && daysUntilDeadline <= 2;
-                  const rowAlert = startsToday ? " requirement-row-starting-today" : deadlineIsNear ? " requirement-row-deadline-soon" : "";
+                  const deadlineIsNear = !deadlineIsPast && !startsToday && daysUntilDeadline !== null && daysUntilDeadline >= 0 && daysUntilDeadline <= 2;
+                  const rowAlert = deadlineIsPast ? " requirement-row-overdue" : startsToday ? " requirement-row-starting-today" : deadlineIsNear ? " requirement-row-deadline-soon" : "";
                   return <tr key={requirement.id} className={`requirement-row${rowAlert}`} tabIndex={0} onClick={() => setSelectedRequirement(requirement)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedRequirement(requirement); } }}>
-                    <td><span className="requirement-cell-title">{requirement.title}{startsToday && <span className="requirement-date-alert requirement-date-alert-start">Inicia hoy</span>}{deadlineIsNear && <span className="requirement-date-alert requirement-date-alert-deadline">{daysUntilDeadline === 0 ? "Vence hoy" : daysUntilDeadline === 1 ? "Vence mañana" : "Vence en 2 días"}</span>}</span><span className="requirement-cell-description">{requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
+                    <td><span className="requirement-cell-title">{requirement.title}{deadlineIsPast && <span className="requirement-date-alert requirement-date-alert-overdue">Vencido</span>}{startsToday && <span className="requirement-date-alert requirement-date-alert-start">Inicia hoy</span>}{deadlineIsNear && <span className="requirement-date-alert requirement-date-alert-deadline">{daysUntilDeadline === 0 ? "Vence hoy" : daysUntilDeadline === 1 ? "Vence mañana" : "Vence en 2 días"}</span>}</span><span className="requirement-cell-description">{requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
                     <td><span className="requirement-people"><b className="avatar avatar-blue">{assignee ? initials(assignee.name) : "?"}</b><span><strong>{assignee?.name || "Sin responsable"}</strong><small>Dev · {assignee?.role || "Asignar miembro"}</small><small>QE · {requirement.qeAssignee || "Sin asignar"}</small></span></span></td>
                     <td><span className="requirement-type">{requirement.ocdType || "—"}</span></td>
                     <td><StatusPill status={requirement.status} /></td>

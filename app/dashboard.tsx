@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import {
   calculateProjectProgress,
@@ -10,7 +11,7 @@ import {
   createId,
 } from "@/lib/workspace";
 import type { LogEntry, Project, Requirement, TeamMember, WorkspaceData } from "@/lib/workspace";
-import RequirementAlerts from "@/app/requirement-alerts";
+import RequirementAlerts, { DailyUpdateNotifications } from "@/app/requirement-alerts";
 import ProjectStatusReport from "@/app/project-status-report";
 
 type IconName =
@@ -126,9 +127,12 @@ function TeamAvatar({ member, large = false }: { member: TeamMember; large?: boo
 }
 
 export default function Dashboard() {
+  const searchParams = useSearchParams();
+  const urlProjectSearch = searchParams.get("projectSearch") || "";
+  const urlPage = searchParams.get("page");
   const [userEmail, setUserEmail] = useState("");
   const [workspace, setWorkspace] = useState<WorkspaceData>(emptyWorkspace);
-  const [activePage, setActivePage] = useState<"dashboard" | "team" | "projects">("dashboard");
+  const [activePageState, setActivePage] = useState<"dashboard" | "team" | "projects">("dashboard");
   const [booting, setBooting] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -138,7 +142,6 @@ export default function Dashboard() {
   const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [search, setSearch] = useState("");
-  const [projectSearch, setProjectSearch] = useState("");
   const [memberModal, setMemberModal] = useState<TeamMember | "new" | null>(null);
   const [projectModal, setProjectModal] = useState<Project | "new" | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -174,6 +177,34 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [refreshWorkspace]);
+
+  const activePage = urlPage === "projects" ? "projects" : activePageState;
+  const projectSearch = urlProjectSearch;
+
+  function replaceCurrentUrl(params: URLSearchParams) {
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    );
+  }
+
+  function updateProjectSearch(value: string) {
+    const params = new URLSearchParams(window.location.search);
+    if (value.trim()) params.set("projectSearch", value);
+    else params.delete("projectSearch");
+    if (activePage === "projects") params.set("page", "projects");
+    replaceCurrentUrl(params);
+  }
+
+  function navigateToPage(page: "dashboard" | "team" | "projects") {
+    setActivePage(page);
+    const params = new URLSearchParams(window.location.search);
+    if (page === "projects") params.set("page", "projects");
+    else params.delete("page");
+    replaceCurrentUrl(params);
+  }
 
   const filteredMembers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -483,19 +514,19 @@ export default function Dashboard() {
   return (
     <main className="app-shell">
       <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
-        <button className="sidebar-brand" onClick={() => setActivePage("dashboard")}>
+        <button className="sidebar-brand" onClick={() => navigateToPage("dashboard")}>
           <span className="brand-mark"><span>B</span></span>
           <span className="sidebar-brand-text">bitácora<span>+</span><small>SEGUIMIENTO DE EQUIPO</small></span>
         </button>
         <div className="sidebar-section-label">ESPACIO DE TRABAJO</div>
         <nav className="side-nav" aria-label="Navegación principal">
-          <button className={activePage === "dashboard" ? "nav-item nav-active" : "nav-item"} onClick={() => { setActivePage("dashboard"); setSidebarOpen(false); }}>
+          <button className={activePage === "dashboard" ? "nav-item nav-active" : "nav-item"} onClick={() => { navigateToPage("dashboard"); setSidebarOpen(false); }}>
             <Icon name="grid" /><span>Dashboard</span>
           </button>
-          <button className={activePage === "team" ? "nav-item nav-active" : "nav-item"} onClick={() => { setActivePage("team"); setSidebarOpen(false); }}>
+          <button className={activePage === "team" ? "nav-item nav-active" : "nav-item"} onClick={() => { navigateToPage("team"); setSidebarOpen(false); }}>
             <Icon name="team" /><span>Team Members</span><span className="nav-count">{workspace.members.length}</span>
           </button>
-          <button className={activePage === "projects" ? "nav-item nav-active" : "nav-item"} onClick={() => { setActivePage("projects"); setSidebarOpen(false); }}>
+          <button className={activePage === "projects" ? "nav-item nav-active" : "nav-item"} onClick={() => { navigateToPage("projects"); setSidebarOpen(false); }}>
             <Icon name="briefcase" /><span>Proyectos</span><span className="nav-count">{workspace.projects.length}</span>
           </button>
         </nav>
@@ -520,7 +551,12 @@ export default function Dashboard() {
           <div className="breadcrumb"><span>Workspace</span><Icon name="chevron" size={14} /><strong>{pageTitle}</strong></div>
           <div className="topbar-actions">
             <span className="today-date"><Icon name="calendar" size={16} /> {new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "long", year: "numeric" }).format(new Date())}</span>
-            <button className="icon-button notification-button" aria-label="Notificaciones"><Icon name="bell" size={18} /><i /></button>
+            <DailyUpdateNotifications
+              requirements={workspace.requirements}
+              requirementLogs={workspace.requirementLogs}
+              members={workspace.members}
+              projects={workspace.projects}
+            />
             <button className="topbar-user" onClick={() => void handleLogout()} title="Cerrar sesión">
               <span className="profile-avatar">{initialsFromName(greetingName)}</span><Icon name="chevron" size={15} />
             </button>
@@ -541,7 +577,7 @@ export default function Dashboard() {
               inProgressProjects={inProgressProjects}
               averageProgress={averageProgress}
               greetingName={greetingName}
-              onNavigate={setActivePage}
+              onNavigate={navigateToPage}
               onSelectMember={setMemberModal}
             />
           )}
@@ -600,14 +636,14 @@ export default function Dashboard() {
                     aria-label="Buscar proyectos por team member o requerimiento"
                     placeholder="Buscar por team member, requerimiento o proyecto..."
                     value={projectSearch}
-                    onChange={(event) => setProjectSearch(event.target.value)}
+                    onChange={(event) => updateProjectSearch(event.target.value)}
                   />
                   {projectSearch && (
                     <button
                       className="project-search-clear"
                       type="button"
                       aria-label="Limpiar búsqueda de proyectos"
-                      onClick={() => setProjectSearch("")}
+                      onClick={() => updateProjectSearch("")}
                     >
                       <Icon name="close" size={15} />
                     </button>
@@ -626,7 +662,11 @@ export default function Dashboard() {
                     key={project.id}
                     style={{ animationDelay: `${index * 55}ms` }}
                   >
-                    <Link className="project-card-content" href={`/projects/${encodeURIComponent(project.id)}`} aria-label={`Abrir requerimientos de ${project.name}`}>
+                    <Link
+                      className="project-card-content"
+                      href={`/projects/${encodeURIComponent(project.id)}${projectSearch.trim() ? `?projectSearch=${encodeURIComponent(projectSearch.trim())}` : ""}`}
+                      aria-label={`Abrir requerimientos de ${project.name}`}
+                    >
                       <span className={`project-symbol project-${project.color}`}><Icon name="briefcase" size={21} /></span>
                       <span className="project-info"><span className="project-title-row"><strong>{project.name}</strong><span className={`status-pill ${project.status === "En curso" ? "status-active" : project.status === "Completado" ? "status-done" : "status-planning"}`}><i />{project.status}</span></span><span className="project-description">{project.description}</span><span className="project-detail-row"><span><Icon name="team" size={15} />{calculateProjectTeamSize(workspace.requirements, project.id)} personas</span><span><Icon name="calendar" size={15} />Entrega: {formatDate(project.dueDate)}</span></span>{projectSearch.trim() && <span className="project-search-matches"><strong>{matchingRequirements.length ? `${matchingRequirements.length} requerimiento${matchingRequirements.length === 1 ? "" : "s"} relacionado${matchingRequirements.length === 1 ? "" : "s"}` : "Sin requerimientos registrados"}</strong>{matchingRequirements.slice(0, 4).map((requirement) => { const member = workspace.members.find((item) => item.id === requirement.assigneeId); return <span className="project-search-match" key={requirement.id}><span>{requirement.title}</span><small>{member?.name || "Sin responsable"} · {requirement.status}</small></span>; })}{matchingRequirements.length > 4 && <small className="project-search-more">y {matchingRequirements.length - 4} más…</small>}</span>}</span>
                       <span className="project-progress-wrap"><span className="project-progress-number">{project.progress}<small>%</small></span><span className="project-progress-track"><i style={{ width: `${project.progress}%` }} /></span><small>abrir detalle</small></span>
@@ -653,7 +693,7 @@ export default function Dashboard() {
                   </article>
                 ))}
                 {!workspace.projects.length && <EmptyState title="Tu próximo gran proyecto empieza aquí" message="Crea una iniciativa para organizar el trabajo y seguir su progreso." action="Crear proyecto" onAction={() => setProjectModal("new")} />}
-                {workspace.projects.length > 0 && !projectSearchResults.length && <EmptyState title="No encontramos coincidencias" message="Prueba con otro nombre de team member o requerimiento." action="Limpiar búsqueda" onAction={() => setProjectSearch("")} />}
+                {workspace.projects.length > 0 && !projectSearchResults.length && <EmptyState title="No encontramos coincidencias" message="Prueba con otro nombre de team member o requerimiento." action="Limpiar búsqueda" onAction={() => updateProjectSearch("")} />}
               </div>
             </section>
           )}

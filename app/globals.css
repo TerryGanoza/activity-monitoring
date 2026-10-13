@@ -160,7 +160,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .today-date svg { color: #a8b3c3; }
 .icon-button { position: relative; width: 34px; height: 34px; display: inline-grid; place-items: center; color: #687992; border: 1px solid transparent; border-radius: 7px; background: transparent; cursor: pointer; }
 .icon-button:hover { color: #244faa; border-color: #e9eef8; background: #f7f9fd; }
-.notification-button i { position: absolute; top: 7px; right: 6px; width: 6px; height: 6px; border: 1.5px solid white; border-radius: 50%; background: #f18b32; }
+.daily-update-notifications { position: relative; display: flex; }
+.notification-count { position: absolute; top: -3px; right: -5px; min-width: 16px; height: 16px; display: grid; place-items: center; padding: 0 4px; color: white; border: 2px solid white; border-radius: 10px; background: #d84b40; font-size: 8px; font-weight: 700; line-height: 1; }
+.daily-update-panel { position: absolute; top: calc(100% + 11px); right: -12px; z-index: 25; width: min(350px, calc(100vw - 28px)); overflow: hidden; border: 1px solid #e5eaf1; border-radius: 11px; background: white; box-shadow: 0 14px 38px #1b2d481f; animation: fadeUp .18s ease both; }
+.daily-update-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 15px; border-bottom: 1px solid #edf0f5; background: #fafbfe; }
+.daily-update-panel-heading > div { display: grid; gap: 4px; }
+.daily-update-panel-heading strong { color: #293b57; font-size: 11px; }
+.daily-update-panel-heading span { color: #8996a8; font-size: 9px; }
+.daily-update-panel-close { width: 25px; height: 25px; display: grid; place-items: center; flex: 0 0 auto; padding: 0; color: #8793a5; border: 0; border-radius: 6px; background: transparent; font-size: 20px; cursor: pointer; }
+.daily-update-panel-close:hover { color: #3d506c; background: #edf1f7; }
+.daily-update-panel-list { max-height: min(54vh, 390px); display: grid; gap: 7px; overflow-y: auto; padding: 9px; }
+.daily-update-pending-item { display: grid; gap: 4px; padding: 10px 11px; color: inherit; border: 1px solid #edf0f5; border-radius: 7px; background: #fff; text-decoration: none; transition: border-color .15s, background .15s; }
+.daily-update-pending-item:hover, .daily-update-pending-item:focus-visible { border-color: #d4deef; outline: none; background: #f8faff; }
+.daily-update-pending-item strong { overflow: hidden; color: #354762; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.daily-update-pending-item span { color: #77869c; font-size: 9px; }
+.daily-update-pending-item small { color: #9a6b2e; font-size: 8px; }
+.daily-update-panel-empty { margin: 0; padding: 18px 15px; color: #8290a3; font-size: 10px; line-height: 1.55; }
 .topbar-user { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .topbar-user .profile-avatar { width: 30px; height: 30px; }
 .topbar-user > svg { color: #8a97a9; transform: rotate(90deg); }
@@ -385,6 +400,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .requirement-row { cursor: pointer; transition: background .15s; }
 .requirement-row:hover, .requirement-row:focus-visible { outline: none; background: #f7f9fe; }
 .requirement-row:focus-visible { box-shadow: inset 0 0 0 2px #89a7e6; }
+.requirement-row-overdue td { background: #fff4f3; }
+.requirement-row-overdue td:first-child { box-shadow: inset 3px 0 0 #cf3d36; }
+.requirement-row-overdue:hover td, .requirement-row-overdue:focus-visible td { background: #ffe9e7; }
 .requirement-row-starting-today td { background: #fff8ed; }
 .requirement-row-starting-today td:first-child { box-shadow: inset 3px 0 0 #e99a35; }
 .requirement-row-deadline-soon td { background: #fffdf3; }
@@ -392,8 +410,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .requirement-row-starting-today:hover td, .requirement-row-starting-today:focus-visible td { background: #fff1d9; }
 .requirement-row-deadline-soon:hover td, .requirement-row-deadline-soon:focus-visible td { background: #fff8dc; }
 .requirement-cell-title, .requirement-cell-description, .requirement-log-count { max-width: 245px; display: flex; align-items: center; gap: 5px; }
-.requirement-cell-title { color: #293a55; font-size: 10px; font-weight: 700; }
+.requirement-cell-title { flex-wrap: wrap; color: #293a55; font-size: 10px; font-weight: 700; }
 .requirement-date-alert { flex: 0 0 auto; padding: 3px 6px; border-radius: 10px; font-size: 7px; font-weight: 700; }
+.requirement-date-alert-overdue { color: #a62621; background: #ffd9d6; }
 .requirement-date-alert-start { color: #a75c0c; background: #ffe6bd; }
 .requirement-date-alert-deadline { color: #8c7018; background: #fff0ac; }
 .requirement-cell-description { margin-top: 4px; overflow: hidden; color: #8290a3; text-overflow: ellipsis; white-space: nowrap; }

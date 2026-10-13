@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import type { Project, Requirement, TeamMember } from "@/lib/workspace";
+import type { Project, Requirement, RequirementLog, TeamMember } from "@/lib/workspace";
 
 function localDate() {
   const now = new Date();
@@ -42,6 +42,93 @@ export function getDaysUntilDeadline(deadline: string, today: string): number | 
   const daysUntilDeadline = (deadlineTime - todayTime) / 86_400_000;
 
   return Number.isInteger(daysUntilDeadline) ? daysUntilDeadline : null;
+}
+
+export function DailyUpdateNotifications({
+  requirements,
+  requirementLogs,
+  members,
+  projects,
+}: {
+  requirements: Requirement[];
+  requirementLogs: RequirementLog[];
+  members: TeamMember[];
+  projects: Project[];
+}) {
+  const today = useCurrentDate();
+  const [isOpen, setIsOpen] = useState(false);
+  const updatedRequirementIds = new Set(
+    today
+      ? requirementLogs
+          .filter((entry) => entry.date === today)
+          .map((entry) => entry.requirementId)
+      : [],
+  );
+  const pendingRequirements = requirements
+    .filter(
+      (requirement) =>
+        requirement.status !== "Abierto" &&
+        requirement.status !== "Done" &&
+        requirement.status !== "Bloqueado" &&
+        !updatedRequirementIds.has(requirement.id),
+    )
+    .sort((a, b) => a.title.localeCompare(b.title, "es"));
+
+  return (
+    <div className="daily-update-notifications">
+      <button
+        className="icon-button notification-button"
+        type="button"
+        aria-label={`Avances pendientes de hoy: ${pendingRequirements.length}`}
+        aria-expanded={isOpen}
+        aria-controls="daily-update-notification-panel"
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+          <path d="M10 21h4" />
+        </svg>
+        {pendingRequirements.length > 0 && <span className="notification-count">{pendingRequirements.length}</span>}
+      </button>
+      {isOpen && (
+        <section className="daily-update-panel" id="daily-update-notification-panel" aria-label="Requerimientos sin avance de hoy">
+          <div className="daily-update-panel-heading">
+            <div>
+              <strong>Avances pendientes de hoy</strong>
+              <span>
+                {pendingRequirements.length
+                  ? `${pendingRequirements.length} requerimiento(s) por actualizar`
+                  : "Todos los requerimientos activos están al día"}
+              </span>
+            </div>
+            <button className="daily-update-panel-close" type="button" aria-label="Cerrar notificaciones" onClick={() => setIsOpen(false)}>×</button>
+          </div>
+          {pendingRequirements.length ? (
+            <div className="daily-update-panel-list">
+              {pendingRequirements.map((requirement) => {
+                const member = members.find((item) => item.id === requirement.assigneeId);
+                const project = projects.find((item) => item.id === requirement.projectId);
+                return (
+                  <Link
+                    className="daily-update-pending-item"
+                    href={`/projects/${encodeURIComponent(requirement.projectId)}`}
+                    key={requirement.id}
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <strong>{requirement.title}</strong>
+                    <span>{member?.name || "Sin responsable"} · {project?.name || "Proyecto sin nombre"}</span>
+                    <small>Estado: {requirement.status}</small>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="daily-update-panel-empty">No hay avances pendientes para los requerimientos activos.</p>
+          )}
+        </section>
+      )}
+    </div>
+  );
 }
 
 export default function RequirementAlerts({
