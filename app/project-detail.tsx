@@ -260,7 +260,13 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
     });
   }
 
-  async function addDailyEntry(requirement: Requirement, status: RequirementStatus, note: string) {
+  async function addDailyEntry(
+    requirement: Requirement,
+    status: RequirementStatus,
+    note: string,
+    deadline: string,
+    passTime: string,
+  ) {
     const member = workspace.members.find((item) => item.id === requirement.assigneeId);
     if (!member) {
       setError("Asigna una persona responsable al requerimiento antes de registrar avances.");
@@ -275,7 +281,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       status,
       note: note.trim(),
     };
-    const updatedRequirement = { ...requirement, status };
+    const updatedRequirement = { ...requirement, status, deadline, passTime };
     const nextWorkspace = {
       ...workspace,
       requirements: workspace.requirements.map((item) =>
@@ -485,11 +491,19 @@ function RequirementLogModal({
   saving: boolean;
   onClose: () => void;
   onEdit: () => void;
-  onAddEntry: (requirement: Requirement, status: RequirementStatus, note: string) => Promise<boolean>;
+  onAddEntry: (
+    requirement: Requirement,
+    status: RequirementStatus,
+    note: string,
+    deadline: string,
+    passTime: string,
+  ) => Promise<boolean>;
   onEditEntry: (requirement: Requirement, entry: RequirementLog) => Promise<boolean>;
 }) {
   const [status, setStatus] = useState(requirement.status);
   const [note, setNote] = useState("");
+  const [deadline, setDeadline] = useState(requirement.deadline);
+  const [passTime, setPassTime] = useState(requirement.passTime);
   const [editingLogId, setEditingLogId] = useState("");
   const [editStatus, setEditStatus] = useState<RequirementStatus>(requirement.status);
   const [editDate, setEditDate] = useState("");
@@ -498,7 +512,7 @@ function RequirementLogModal({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!note.trim()) return;
-    void onAddEntry(requirement, status, note).then((saved) => {
+    void onAddEntry(requirement, status, note, deadline, passTime).then((saved) => {
       if (saved) setNote("");
     });
   }
@@ -524,7 +538,7 @@ function RequirementLogModal({
     <div className="requirement-detail-meta"><span><small>Responsable</small><strong>{member?.name || "Sin responsable"}</strong></span><span><small>Estado actual</small><StatusPill status={requirement.status} /></span><span><small>Tipo OCD</small><strong>{requirement.ocdType || "—"}</strong></span><span><small>Deadline</small><strong>{formatDate(requirement.deadline)}</strong></span></div>
     <p className="requirement-detail-description">{requirement.description || "Sin descripción adicional."}</p>
     <div className="requirement-detail-actions"><span><strong>QE asignado:</strong> {requirement.qeAssignee || "Sin asignar"}</span><button className="button button-outline" onClick={onEdit}><Icon name="edit" size={15} /> Editar requerimiento</button></div>
-    <form className="daily-update-form" onSubmit={submit}><div className="logbook-heading"><div><span className="eyebrow">REGISTRO DE HOY · {formatDate(today())}</span><h3>¿Qué avanzó hoy?</h3></div></div><div className="daily-update-fields"><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label><label className="daily-note-field">Avance o impedimento<textarea value={note} onChange={(event) => setNote(event.target.value)} required maxLength={2000} rows={3} placeholder="Describe lo que avanzaste, los acuerdos o los bloqueos de hoy." /></label></div><div className="daily-update-footer"><span>Este registro quedará asociado a {member?.name || "la persona responsable"}.</span><button className="button button-primary" type="submit" disabled={saving || !member || !note.trim()}><Icon name="plus" size={15} />{saving ? "Guardando..." : "Guardar avance del día"}</button></div></form>
+    <form className="daily-update-form" onSubmit={submit}><div className="logbook-heading"><div><span className="eyebrow">REGISTRO DE HOY · {formatDate(today())}</span><h3>¿Qué avanzó hoy?</h3></div></div><div className="daily-update-fields"><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label><label>Deadline (opcional)<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Hora de pase (opcional)<input type="time" value={passTime} onChange={(event) => setPassTime(event.target.value)} /></label><label className="daily-note-field">Avance o impedimento<textarea value={note} onChange={(event) => setNote(event.target.value)} required maxLength={2000} rows={3} placeholder="Describe lo que avanzaste, los acuerdos o los bloqueos de hoy." /></label></div><div className="daily-update-footer"><span>El deadline y la hora de pase se actualizarán al guardar. Puedes dejarlos en blanco.</span><button className="button button-primary" type="submit" disabled={saving || !member || !note.trim()}><Icon name="plus" size={15} />{saving ? "Guardando..." : "Guardar avance del día"}</button></div></form>
     <section className="requirement-history"><div className="logbook-heading"><div><span className="eyebrow">HISTORIAL CRONOLÓGICO</span><h3>Actualizaciones anteriores</h3></div><span className="logbook-count">{logs.length} registros</span></div><div className="logbook-list">{logs.map((entry) => <article className="logbook-entry requirement-log-entry" key={entry.id}><i className="logbook-marker" /><div className="requirement-log-entry-content">{editingLogId === entry.id ? <form className="requirement-log-edit-form" onSubmit={(event) => void saveEditedEntry(event, entry)}><div className="requirement-log-edit-fields"><label>Fecha<input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} required /></label><label>Estado<select value={editStatus} onChange={(event) => setEditStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label></div><label className="requirement-log-edit-note">Avance o impedimento<textarea value={editNote} onChange={(event) => setEditNote(event.target.value)} required maxLength={2000} rows={3} /></label><div className="requirement-log-edit-actions"><button className="button button-outline" type="button" onClick={() => setEditingLogId("")} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !editNote.trim()}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form> : <><span><strong>{entry.memberName} · {entry.status}</strong><time>{formatDate(entry.date)}</time></span><p>{entry.note}</p></>}</div>{editingLogId !== entry.id && <button className="logbook-edit-button" type="button" aria-label={`Editar avance de ${entry.memberName} del ${formatDate(entry.date)}`} title="Editar avance" onClick={() => startEditingEntry(entry)} disabled={saving || Boolean(editingLogId)}><Icon name="edit" size={14} /></button>}</article>)}{!logs.length && <p className="logbook-empty">Este requerimiento aún no tiene avances. Registra el primero arriba.</p>}</div></section>
   </section></div>;
 }

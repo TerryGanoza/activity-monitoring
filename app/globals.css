@@ -454,10 +454,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .requirement-detail-actions .button { min-height: 33px; padding: 0 10px; font-size: 9px; }
 .daily-update-form { margin-top: 16px; padding: 13px; border: 1px solid #e7edf7; border-radius: 8px; background: #f8faff; }
 .daily-update-form .logbook-heading h3 { font-size: 13px; }
-.daily-update-fields { display: grid; grid-template-columns: 145px minmax(0, 1fr); gap: 11px; margin-top: 13px; }
+.daily-update-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin-top: 13px; }
 .daily-update-fields > label { display: flex; flex-direction: column; gap: 7px; color: #53627a; font-size: 9px; font-weight: 650; }
-.daily-update-fields > label select, .daily-update-fields > label textarea { width: 100%; min-height: 36px; padding: 8px 9px; color: #3a4b65; border: 1px solid #e2e8f1; border-radius: 6px; outline: 0; background: #fff; font-size: 10px; font-weight: 400; }
-.daily-update-fields > label textarea { resize: vertical; line-height: 1.5; }.daily-update-fields > label select:focus, .daily-update-fields > label textarea:focus { border-color: #7995d2; box-shadow: 0 0 0 3px #2052c510; }.daily-update-fields > label textarea::placeholder { color: #a5afbc; }
+.daily-update-fields > label select, .daily-update-fields > label input, .daily-update-fields > label textarea { width: 100%; min-height: 36px; padding: 8px 9px; color: #3a4b65; border: 1px solid #e2e8f1; border-radius: 6px; outline: 0; background: #fff; font-size: 10px; font-weight: 400; }
+.daily-update-fields > .daily-note-field { grid-column: 1 / -1; }
+.daily-update-fields > label textarea { resize: vertical; line-height: 1.5; }.daily-update-fields > label select:focus, .daily-update-fields > label input:focus, .daily-update-fields > label textarea:focus { border-color: #7995d2; box-shadow: 0 0 0 3px #2052c510; }.daily-update-fields > label textarea::placeholder { color: #a5afbc; }
 .daily-update-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
 .daily-update-footer > span { color: #8995a6; font-size: 8px; }.daily-update-footer .button { min-height: 35px; font-size: 9px; }
 .requirement-history { margin-top: 17px; }.requirement-history .logbook-list { max-height: 260px; }
