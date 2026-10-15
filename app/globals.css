@@ -301,8 +301,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .project-overview-strip b { color: #3a4a63; font-weight: 700; }
 .project-report-action { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: -5px 0 14px; }
 .project-report-date { display: grid; gap: 5px; color: #748198; font-size: 9px; font-weight: 600; }
-.project-report-date input { min-height: 36px; padding: 0 9px; color: #465873; border: 1px solid #e3e9f1; border-radius: 6px; outline: 0; background: #fff; font: inherit; }
-.project-report-date input:focus { border-color: #94aad8; box-shadow: 0 0 0 3px #2052c50c; }
+.project-report-date input, .project-report-date select { min-height: 36px; padding: 0 9px; color: #465873; border: 1px solid #e3e9f1; border-radius: 6px; outline: 0; background: #fff; font: inherit; }
+.project-report-date input:focus, .project-report-date select:focus { border-color: #94aad8; box-shadow: 0 0 0 3px #2052c50c; }
 .project-report-action > .button { min-height: 36px; font-size: 9px; }
 .project-report-action > .button svg { color: #5574ae; }
 .project-report-error { flex-basis: 100%; color: #a83c35; font-size: 9px; }
@@ -363,6 +363,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .requirement-status-active { color: #315eaf; background: #eef3ff; }
 .requirement-status-review { color: #7958b7; background: #f2effb; }
 .requirement-status-blocked { color: #b85f35; background: #fff0e9; }
+.requirement-status-cancelled { color: #a13f4a; background: #fff0f1; }
 .requirement-status-done { color: #348463; background: #edf8f2; }
 .requirement-status-freeze { color: #a06b2a; background: #fff5e8; }
 .requirement-status-revert { color: #a44d4d; background: #fff0f0; }
@@ -413,6 +414,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .requirement-cell-title { flex-wrap: wrap; color: #293a55; font-size: 10px; font-weight: 700; }
 .requirement-date-alert { flex: 0 0 auto; padding: 3px 6px; border-radius: 10px; font-size: 7px; font-weight: 700; }
 .requirement-date-alert-overdue { color: #a62621; background: #ffd9d6; }
+.requirement-date-alert-cancelled { color: #9f3d48; background: #ffe0e3; }
 .requirement-date-alert-start { color: #a75c0c; background: #ffe6bd; }
 .requirement-date-alert-deadline { color: #8c7018; background: #fff0ac; }
 .requirement-cell-description { margin-top: 4px; overflow: hidden; color: #8290a3; text-overflow: ellipsis; white-space: nowrap; }
@@ -458,6 +460,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .daily-update-fields > label { display: flex; flex-direction: column; gap: 7px; color: #53627a; font-size: 9px; font-weight: 650; }
 .daily-update-fields > label select, .daily-update-fields > label input, .daily-update-fields > label textarea { width: 100%; min-height: 36px; padding: 8px 9px; color: #3a4b65; border: 1px solid #e2e8f1; border-radius: 6px; outline: 0; background: #fff; font-size: 10px; font-weight: 400; }
 .daily-update-fields > .daily-note-field { grid-column: 1 / -1; }
+.daily-update-fields > .daily-cancellation-reason { grid-column: 1 / -1; }
 .daily-update-fields > label textarea { resize: vertical; line-height: 1.5; }.daily-update-fields > label select:focus, .daily-update-fields > label input:focus, .daily-update-fields > label textarea:focus { border-color: #7995d2; box-shadow: 0 0 0 3px #2052c510; }.daily-update-fields > label textarea::placeholder { color: #a5afbc; }
 .daily-update-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
 .daily-update-footer > span { color: #8995a6; font-size: 8px; }.daily-update-footer .button { min-height: 35px; font-size: 9px; }

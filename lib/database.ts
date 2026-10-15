@@ -280,6 +280,7 @@ function getDatabase() {
       status TEXT NOT NULL,
       validations TEXT NOT NULL,
       start_date TEXT NOT NULL DEFAULT '',
+      cancellation_reason TEXT NOT NULL DEFAULT '',
       deadline TEXT NOT NULL,
       pass_time TEXT NOT NULL,
       registered_at TEXT NOT NULL
@@ -293,12 +294,25 @@ function getDatabase() {
       status TEXT NOT NULL,
       note TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS requirement_changes (
+      id TEXT PRIMARY KEY,
+      requirement_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      type TEXT NOT NULL,
+      old_value TEXT NOT NULL,
+      new_value TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      actor TEXT NOT NULL
+    );
   `);
   const requirementColumns = database
     .prepare("PRAGMA table_info(requirements)")
     .all() as { name: string }[];
   if (!requirementColumns.some((column) => column.name === "start_date")) {
     database.exec("ALTER TABLE requirements ADD COLUMN start_date TEXT NOT NULL DEFAULT ''");
+  }
+  if (!requirementColumns.some((column) => column.name === "cancellation_reason")) {
+    database.exec("ALTER TABLE requirements ADD COLUMN cancellation_reason TEXT NOT NULL DEFAULT ''");
   }
 
   const adminEmail = process.env.BCP_ADMIN_EMAIL?.trim().toLowerCase() || "admin@bcp.local";
@@ -389,8 +403,8 @@ function getDatabase() {
   if (requirementCount.count === 0) {
     const insertRequirement = database.prepare(`
       INSERT INTO requirements
-        (id, project_id, title, description, assignee_id, qe_assignee, ocd_type, status, validations, start_date, deadline, pass_time, registered_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, project_id, title, description, assignee_id, qe_assignee, ocd_type, status, validations, start_date, cancellation_reason, deadline, pass_time, registered_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const requirement of starterRequirements) {
       insertRequirement.run(
@@ -404,6 +418,7 @@ function getDatabase() {
         requirement.status,
         JSON.stringify(requirement.validations),
         requirement.startDate,
+        requirement.cancellationReason || "",
         requirement.deadline,
         requirement.passTime,
         requirement.registeredAt,
@@ -469,7 +484,8 @@ export function readWorkspace(): WorkspaceData {
   const rawRequirements = database.prepare(`
     SELECT id, project_id AS projectId, title, description, assignee_id AS assigneeId,
       qe_assignee AS qeAssignee, ocd_type AS ocdType, status, validations,
-      start_date AS startDate, deadline, pass_time AS passTime, registered_at AS registeredAt
+      start_date AS startDate, cancellation_reason AS cancellationReason,
+      deadline, pass_time AS passTime, registered_at AS registeredAt
     FROM requirements ORDER BY registered_at DESC, title
   `).all() as (Omit<Requirement, "validations"> & { validations: string })[];
   const requirements = rawRequirements.map((requirement) => ({
@@ -494,6 +510,11 @@ export function readWorkspace(): WorkspaceData {
       requirementsById.get(entry.requirementId)?.ocdType || "",
     ),
   }));
+  const requirementChanges = database.prepare(`
+    SELECT id, requirement_id AS requirementId, date, type, old_value AS oldValue,
+      new_value AS newValue, reason, actor
+    FROM requirement_changes ORDER BY date DESC, id DESC
+  `).all() as WorkspaceData["requirementChanges"];
   const projectsWithCalculatedProgress = projects.map((project) => ({
     ...project,
     progress: calculateProjectProgress(
@@ -510,6 +531,7 @@ export function readWorkspace(): WorkspaceData {
     logEntries,
     requirements,
     requirementLogs,
+    requirementChanges,
   };
 }
 
@@ -531,7 +553,7 @@ export function saveWorkspace(workspace: WorkspaceData) {
   );
   database.exec("BEGIN");
   try {
-    database.exec("DELETE FROM requirement_logs; DELETE FROM requirements; DELETE FROM members; DELETE FROM projects; DELETE FROM log_entries;");
+    database.exec("DELETE FROM requirement_changes; DELETE FROM requirement_logs; DELETE FROM requirements; DELETE FROM members; DELETE FROM projects; DELETE FROM log_entries;");
     const insertMember = database.prepare(`
       INSERT INTO members (id, name, role, email, area, status, initials, color, project, progress, joined_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -576,8 +598,8 @@ export function saveWorkspace(workspace: WorkspaceData) {
     }
     const insertRequirement = database.prepare(`
       INSERT INTO requirements
-        (id, project_id, title, description, assignee_id, qe_assignee, ocd_type, status, validations, start_date, deadline, pass_time, registered_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, project_id, title, description, assignee_id, qe_assignee, ocd_type, status, validations, start_date, cancellation_reason, deadline, pass_time, registered_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const requirement of workspace.requirements) {
       insertRequirement.run(
@@ -591,6 +613,7 @@ export function saveWorkspace(workspace: WorkspaceData) {
         requirement.status,
         JSON.stringify(requirement.validations),
         requirement.startDate,
+        requirement.cancellationReason || "",
         requirement.deadline,
         requirement.passTime,
         requirement.registeredAt,
@@ -610,6 +633,23 @@ export function saveWorkspace(workspace: WorkspaceData) {
         entry.date,
         entry.status,
         entry.note,
+      );
+    }
+    const insertRequirementChange = database.prepare(`
+      INSERT INTO requirement_changes
+        (id, requirement_id, date, type, old_value, new_value, reason, actor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const change of workspace.requirementChanges) {
+      insertRequirementChange.run(
+        change.id,
+        change.requirementId,
+        change.date,
+        change.type,
+        change.oldValue,
+        change.newValue,
+        change.reason,
+        change.actor,
       );
     }
     database.exec("COMMIT");

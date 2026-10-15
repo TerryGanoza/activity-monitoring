@@ -10,6 +10,7 @@ import type {
   LogEntry,
   Project,
   Requirement,
+  RequirementChange,
   RequirementLog,
   TeamMember,
   WorkspaceData,
@@ -103,6 +104,10 @@ function isRequirement(value: unknown): value is Requirement {
     getRequirementStatuses(requirement.ocdType).includes(
       requirement.status as Requirement["status"],
     ) &&
+    isText(requirement.cancellationReason ?? "", 1000) &&
+    (requirement.status !== "Cancelado" ||
+      (typeof requirement.cancellationReason === "string" &&
+        Boolean(requirement.cancellationReason.trim()))) &&
     isText(requirement.startDate, 10) &&
     (requirement.startDate === "" || /^\d{4}-\d{2}-\d{2}$/.test(requirement.startDate)) &&
     isText(requirement.deadline, 10) &&
@@ -136,6 +141,23 @@ function isRequirementLog(value: unknown): value is RequirementLog {
   );
 }
 
+function isRequirementChange(value: unknown): value is RequirementChange {
+  if (!value || typeof value !== "object") return false;
+  const change = value as Record<string, unknown>;
+  return (
+    isText(change.id, 80) &&
+    isText(change.requirementId, 80) &&
+    isText(change.date, 10) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(change.date) &&
+    (change.type === "deadline" || change.type === "scope") &&
+    isText(change.oldValue, 2300) &&
+    isText(change.newValue, 2300) &&
+    isText(change.reason, 1000) &&
+    Boolean(change.reason.trim()) &&
+    isText(change.actor, 254)
+  );
+}
+
 export async function GET() {
   if (!(await isAuthenticated())) {
     return Response.json({ error: "Inicia sesión para continuar." }, { status: 401 });
@@ -162,16 +184,19 @@ export async function PUT(request: Request) {
     !Array.isArray(workspace.logEntries) ||
     !Array.isArray(workspace.requirements) ||
     !Array.isArray(workspace.requirementLogs) ||
+    !Array.isArray(workspace.requirementChanges) ||
     workspace.members.length > 500 ||
     workspace.projects.length > 500 ||
     workspace.logEntries.length > 5000 ||
     workspace.requirements.length > 10000 ||
     workspace.requirementLogs.length > 50000 ||
+    workspace.requirementChanges.length > 50000 ||
     !workspace.members.every(isMember) ||
     !workspace.projects.every(isProject) ||
     !workspace.logEntries.every(isLogEntry) ||
     !workspace.requirements.every(isRequirement) ||
     !workspace.requirementLogs.every(isRequirementLog) ||
+    !workspace.requirementChanges.every(isRequirementChange) ||
     new Set(workspace.members.map((member) => member.id)).size !== workspace.members.length ||
     new Set(workspace.projects.map((project) => project.id)).size !== workspace.projects.length ||
     new Set(workspace.logEntries.map((entry) => entry.id)).size !== workspace.logEntries.length ||
@@ -179,6 +204,8 @@ export async function PUT(request: Request) {
       workspace.requirements.length ||
     new Set(workspace.requirementLogs.map((entry) => entry.id)).size !==
       workspace.requirementLogs.length ||
+    new Set(workspace.requirementChanges.map((change) => change.id)).size !==
+      workspace.requirementChanges.length ||
     workspace.logEntries.some(
       (entry) => !workspace.members.some((member) => member.id === entry.memberId),
     ) ||
@@ -198,6 +225,9 @@ export async function PUT(request: Request) {
           !getRequirementStatuses(requirement.ocdType).includes(entry.status)
         );
       },
+    ) ||
+    workspace.requirementChanges.some((change) =>
+      !workspace.requirements.some((requirement) => requirement.id === change.requirementId),
     )
   ) {
     return Response.json({ error: "Los datos enviados no son válidos." }, { status: 400 });

@@ -19,6 +19,7 @@ import {
 import type {
   Project,
   Requirement,
+  RequirementChange,
   RequirementLog,
   RequirementStatus,
   TeamMember,
@@ -31,6 +32,7 @@ const emptyWorkspace: WorkspaceData = {
   logEntries: [],
   requirements: [],
   requirementLogs: [],
+  requirementChanges: [],
 };
 
 const requirementStatuses: RequirementStatus[] = [...REQUIREMENT_STATUSES];
@@ -91,6 +93,8 @@ function initials(name: string) {
 function StatusPill({ status }: { status: RequirementStatus }) {
   const tone = status === "Done"
     ? "done"
+    : status === "Cancelado"
+      ? "cancelled"
     : status === "Bloqueado"
       ? "blocked"
       : status === "Gestión de pase"
@@ -233,11 +237,40 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
     }
   }
 
-  function saveRequirement(requirement: Requirement) {
-    const requirements = workspace.requirements.some((item) => item.id === requirement.id)
+  function saveRequirement(requirement: Requirement, changeReason: string) {
+    const previous = workspace.requirements.find((item) => item.id === requirement.id);
+    const requirementChanges: RequirementChange[] = [...workspace.requirementChanges];
+    if (previous && previous.deadline !== requirement.deadline) {
+      requirementChanges.unshift({
+        id: createId("reqchange"),
+        requirementId: requirement.id,
+        date: today(),
+        type: "deadline",
+        oldValue: previous.deadline || "Sin deadline",
+        newValue: requirement.deadline || "Sin deadline",
+        reason: changeReason.trim(),
+        actor: userEmail,
+      });
+    }
+    if (previous && (
+      previous.title !== requirement.title ||
+      previous.description !== requirement.description
+    )) {
+      requirementChanges.unshift({
+        id: createId("reqchange"),
+        requirementId: requirement.id,
+        date: today(),
+        type: "scope",
+        oldValue: `Título: ${previous.title}\nDescripción: ${previous.description || "Sin descripción"}`,
+        newValue: `Título: ${requirement.title}\nDescripción: ${requirement.description || "Sin descripción"}`,
+        reason: changeReason.trim(),
+        actor: userEmail,
+      });
+    }
+    const requirements = previous
       ? workspace.requirements.map((item) => item.id === requirement.id ? requirement : item)
       : [requirement, ...workspace.requirements];
-    void persist({ ...workspace, requirements });
+    void persist({ ...workspace, requirements, requirementChanges });
   }
 
   async function deleteRequirement(requirement: Requirement) {
@@ -257,6 +290,9 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       requirementLogs: workspace.requirementLogs.filter(
         (entry) => entry.requirementId !== requirement.id,
       ),
+      requirementChanges: workspace.requirementChanges.filter(
+        (change) => change.requirementId !== requirement.id,
+      ),
     });
   }
 
@@ -266,7 +302,18 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
     note: string,
     deadline: string,
     passTime: string,
+    cancellationReason: string,
+    qeAssignee: string,
+    deadlineChangeReason: string,
   ) {
+    if (status === "Cancelado" && !cancellationReason.trim()) {
+      setError("Indica el motivo para cancelar este requerimiento.");
+      return false;
+    }
+    if (requirement.deadline !== deadline && !deadlineChangeReason.trim()) {
+      setError("Indica el motivo del cambio de deadline.");
+      return false;
+    }
     const member = workspace.members.find((item) => item.id === requirement.assigneeId);
     if (!member) {
       setError("Asigna una persona responsable al requerimiento antes de registrar avances.");
@@ -279,15 +326,34 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       memberName: member.name,
       date: today(),
       status,
-      note: note.trim(),
+      note: status === "Cancelado" ? cancellationReason.trim() : note.trim(),
     };
-    const updatedRequirement = { ...requirement, status, deadline, passTime };
+    const updatedRequirement = {
+      ...requirement,
+      status,
+      deadline,
+      passTime,
+      qeAssignee,
+      cancellationReason: status === "Cancelado" ? cancellationReason.trim() : "",
+    };
     const nextWorkspace = {
       ...workspace,
       requirements: workspace.requirements.map((item) =>
         item.id === requirement.id ? updatedRequirement : item,
       ),
       requirementLogs: [entry, ...workspace.requirementLogs],
+      requirementChanges: requirement.deadline !== deadline
+        ? [{
+            id: createId("reqchange"),
+            requirementId: requirement.id,
+            date: today(),
+            type: "deadline" as const,
+            oldValue: requirement.deadline || "Sin deadline",
+            newValue: deadline || "Sin deadline",
+            reason: deadlineChangeReason.trim(),
+            actor: userEmail,
+          }, ...workspace.requirementChanges]
+        : workspace.requirementChanges,
     };
     const saved = await persist(nextWorkspace);
     if (saved) setSelectedRequirement(updatedRequirement);
@@ -318,7 +384,11 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       previousLatestEntry?.id === updatedEntry.id ||
       updatedEntry.date > (previousLatestEntry?.date || "");
     const updatedRequirement = editedEntryIsLatest && latestEntry
-      ? { ...requirement, status: latestEntry.status }
+      ? {
+          ...requirement,
+          status: latestEntry.status,
+          cancellationReason: latestEntry.status === "Cancelado" ? latestEntry.note : "",
+        }
       : requirement;
 
     const saved = await persist({
@@ -346,7 +416,11 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
 
   const doneCount = projectRequirements.filter((item) => item.status === "Done").length;
   const activeCount = projectRequirements.filter(
-    (item) => item.status !== "Abierto" && item.status !== "Done" && item.status !== "Bloqueado",
+    (item) =>
+      item.status !== "Abierto" &&
+      item.status !== "Done" &&
+      item.status !== "Bloqueado" &&
+      item.status !== "Cancelado",
   ).length;
   const blockedCount = projectRequirements.filter((item) => item.status === "Bloqueado").length;
   const projectLogs = workspace.requirementLogs
@@ -413,13 +487,22 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
                   const daysUntilDeadline = getDaysUntilDeadline(requirement.deadline, todayDate);
                   const deadlineIsPast =
                     requirement.status !== "Done" &&
+                    requirement.status !== "Cancelado" &&
                     daysUntilDeadline !== null &&
                     daysUntilDeadline < 0;
-                  const startsToday = requirement.startDate === todayDate && Boolean(todayDate);
-                  const deadlineIsNear = !deadlineIsPast && !startsToday && daysUntilDeadline !== null && daysUntilDeadline >= 0 && daysUntilDeadline <= 2;
+                  const isCancelled = requirement.status === "Cancelado";
+                  const startsToday =
+                    !isCancelled && requirement.startDate === todayDate && Boolean(todayDate);
+                  const deadlineIsNear =
+                    !isCancelled &&
+                    !deadlineIsPast &&
+                    !startsToday &&
+                    daysUntilDeadline !== null &&
+                    daysUntilDeadline >= 0 &&
+                    daysUntilDeadline <= 2;
                   const rowAlert = deadlineIsPast ? " requirement-row-overdue" : startsToday ? " requirement-row-starting-today" : deadlineIsNear ? " requirement-row-deadline-soon" : "";
                   return <tr key={requirement.id} className={`requirement-row${rowAlert}`} tabIndex={0} onClick={() => setSelectedRequirement(requirement)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedRequirement(requirement); } }}>
-                    <td><span className="requirement-cell-title">{requirement.title}{deadlineIsPast && <span className="requirement-date-alert requirement-date-alert-overdue">Vencido</span>}{startsToday && <span className="requirement-date-alert requirement-date-alert-start">Inicia hoy</span>}{deadlineIsNear && <span className="requirement-date-alert requirement-date-alert-deadline">{daysUntilDeadline === 0 ? "Vence hoy" : daysUntilDeadline === 1 ? "Vence mañana" : "Vence en 2 días"}</span>}</span><span className="requirement-cell-description">{requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
+                    <td><span className="requirement-cell-title">{requirement.title}{deadlineIsPast && <span className="requirement-date-alert requirement-date-alert-overdue">Vencido</span>}{isCancelled && <span className="requirement-date-alert requirement-date-alert-cancelled">Cancelado</span>}{startsToday && <span className="requirement-date-alert requirement-date-alert-start">Inicia hoy</span>}{deadlineIsNear && <span className="requirement-date-alert requirement-date-alert-deadline">{daysUntilDeadline === 0 ? "Vence hoy" : daysUntilDeadline === 1 ? "Vence mañana" : "Vence en 2 días"}</span>}</span><span className="requirement-cell-description">{isCancelled ? `Motivo: ${requirement.cancellationReason || "Sin motivo registrado"}` : requirement.description || "Sin descripción"}</span><span className="requirement-log-count"><Icon name="clock" size={13} />{logCount} actualizaciones</span></td>
                     <td><span className="requirement-people"><b className="avatar avatar-blue">{assignee ? initials(assignee.name) : "?"}</b><span><strong>{assignee?.name || "Sin responsable"}</strong><small>Dev · {assignee?.role || "Asignar miembro"}</small><small>QE · {requirement.qeAssignee || "Sin asignar"}</small></span></span></td>
                     <td><span className="requirement-type">{requirement.ocdType || "—"}</span></td>
                     <td><StatusPill status={requirement.status} /></td>
@@ -455,6 +538,9 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       {selectedRequirement && <RequirementLogModal
         requirement={selectedRequirement}
         member={workspace.members.find((item) => item.id === selectedRequirement.assigneeId)}
+        qualityEngineers={workspace.members.filter(
+          (item) => item.role === "Quality Engineer" && item.status === "Activo",
+        )}
         logs={workspace.requirementLogs.filter((entry) => entry.requirementId === selectedRequirement.id).sort((a, b) => b.date.localeCompare(a.date))}
         saving={saving}
         onClose={() => setSelectedRequirement(null)}
@@ -478,6 +564,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
 function RequirementLogModal({
   requirement,
   member,
+  qualityEngineers,
   logs,
   saving,
   onClose,
@@ -487,6 +574,7 @@ function RequirementLogModal({
 }: {
   requirement: Requirement;
   member: TeamMember | undefined;
+  qualityEngineers: TeamMember[];
   logs: RequirementLog[];
   saving: boolean;
   onClose: () => void;
@@ -497,6 +585,9 @@ function RequirementLogModal({
     note: string,
     deadline: string,
     passTime: string,
+    cancellationReason: string,
+    qeAssignee: string,
+    deadlineChangeReason: string,
   ) => Promise<boolean>;
   onEditEntry: (requirement: Requirement, entry: RequirementLog) => Promise<boolean>;
 }) {
@@ -504,6 +595,10 @@ function RequirementLogModal({
   const [note, setNote] = useState("");
   const [deadline, setDeadline] = useState(requirement.deadline);
   const [passTime, setPassTime] = useState(requirement.passTime);
+  const [qeAssignee, setQeAssignee] = useState(requirement.qeAssignee);
+  const [cancellationReason, setCancellationReason] = useState(requirement.cancellationReason || "");
+  const [deadlineChangeReason, setDeadlineChangeReason] = useState("");
+  const deadlineChanged = deadline !== requirement.deadline;
   const [editingLogId, setEditingLogId] = useState("");
   const [editStatus, setEditStatus] = useState<RequirementStatus>(requirement.status);
   const [editDate, setEditDate] = useState("");
@@ -511,8 +606,17 @@ function RequirementLogModal({
   const availableStatuses = getRequirementStatuses(requirement.ocdType);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!note.trim()) return;
-    void onAddEntry(requirement, status, note, deadline, passTime).then((saved) => {
+    if (status === "Cancelado" ? !cancellationReason.trim() : !note.trim()) return;
+    void onAddEntry(
+      requirement,
+      status,
+      note,
+      deadline,
+      passTime,
+      cancellationReason,
+      qeAssignee,
+      deadlineChangeReason,
+    ).then((saved) => {
       if (saved) setNote("");
     });
   }
@@ -537,8 +641,9 @@ function RequirementLogModal({
     <div className="modal-heading"><div><span className="eyebrow">BITÁCORA DIARIA · {requirement.title}</span><h2>Seguimiento del requerimiento</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar">×</button></div>
     <div className="requirement-detail-meta"><span><small>Responsable</small><strong>{member?.name || "Sin responsable"}</strong></span><span><small>Estado actual</small><StatusPill status={requirement.status} /></span><span><small>Tipo OCD</small><strong>{requirement.ocdType || "—"}</strong></span><span><small>Deadline</small><strong>{formatDate(requirement.deadline)}</strong></span></div>
     <p className="requirement-detail-description">{requirement.description || "Sin descripción adicional."}</p>
+    {requirement.status === "Cancelado" && <p className="requirement-detail-description"><strong>Motivo de cancelación:</strong> {requirement.cancellationReason}</p>}
     <div className="requirement-detail-actions"><span><strong>QE asignado:</strong> {requirement.qeAssignee || "Sin asignar"}</span><button className="button button-outline" onClick={onEdit}><Icon name="edit" size={15} /> Editar requerimiento</button></div>
-    <form className="daily-update-form" onSubmit={submit}><div className="logbook-heading"><div><span className="eyebrow">REGISTRO DE HOY · {formatDate(today())}</span><h3>¿Qué avanzó hoy?</h3></div></div><div className="daily-update-fields"><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label><label>Deadline (opcional)<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Hora de pase (opcional)<input type="time" value={passTime} onChange={(event) => setPassTime(event.target.value)} /></label><label className="daily-note-field">Avance o impedimento<textarea value={note} onChange={(event) => setNote(event.target.value)} required maxLength={2000} rows={3} placeholder="Describe lo que avanzaste, los acuerdos o los bloqueos de hoy." /></label></div><div className="daily-update-footer"><span>El deadline y la hora de pase se actualizarán al guardar. Puedes dejarlos en blanco.</span><button className="button button-primary" type="submit" disabled={saving || !member || !note.trim()}><Icon name="plus" size={15} />{saving ? "Guardando..." : "Guardar avance del día"}</button></div></form>
+    <form className="daily-update-form" onSubmit={submit}><div className="logbook-heading"><div><span className="eyebrow">REGISTRO DE HOY · {formatDate(today())}</span><h3>{status === "Cancelado" ? "Cancelar requerimiento" : "¿Qué avanzó hoy?"}</h3></div></div><div className="daily-update-fields"><label>Estado<select value={status} onChange={(event) => { const nextStatus = event.target.value as RequirementStatus; setStatus(nextStatus); if (nextStatus !== "Cancelado") setCancellationReason(""); }}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label><label>QE asignado (opcional)<select value={qeAssignee} onChange={(event) => setQeAssignee(event.target.value)}><option value="">Sin asignar</option>{qeAssignee && !qualityEngineers.some((item) => item.name === qeAssignee) && <option value={qeAssignee}>{qeAssignee} · asignación actual</option>}{qualityEngineers.map((qe) => <option key={qe.id} value={qe.name}>{qe.name}</option>)}</select></label><label>Deadline (opcional)<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Hora de pase (opcional)<input type="time" value={passTime} onChange={(event) => setPassTime(event.target.value)} /></label>{deadlineChanged && <label className="daily-cancellation-reason">Motivo del cambio de deadline<textarea value={deadlineChangeReason} onChange={(event) => setDeadlineChangeReason(event.target.value)} required maxLength={1000} rows={2} placeholder="Explica por qué se ajusta el deadline." /></label>}{status === "Cancelado" && <label className="daily-cancellation-reason">Motivo de cancelación<textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} required maxLength={1000} rows={2} placeholder="Explica por qué se cancela este requerimiento." /></label>}{status !== "Cancelado" && <label className="daily-note-field">Avance o impedimento<textarea value={note} onChange={(event) => setNote(event.target.value)} required maxLength={2000} rows={3} placeholder="Describe lo que avanzaste, los acuerdos o los bloqueos de hoy." /></label>}</div><div className="daily-update-footer"><span>{status === "Cancelado" ? "El motivo quedará guardado en el requerimiento y en su historial. Deadline y hora de pase pueden quedar en blanco." : "El deadline y la hora de pase se actualizarán al guardar. Puedes dejarlos en blanco."}</span><button className="button button-primary" type="submit" disabled={saving || !member || (status === "Cancelado" ? !cancellationReason.trim() : !note.trim()) || (deadlineChanged && !deadlineChangeReason.trim())}><Icon name="plus" size={15} />{saving ? "Guardando..." : status === "Cancelado" ? "Guardar cancelación" : "Guardar avance del día"}</button></div></form>
     <section className="requirement-history"><div className="logbook-heading"><div><span className="eyebrow">HISTORIAL CRONOLÓGICO</span><h3>Actualizaciones anteriores</h3></div><span className="logbook-count">{logs.length} registros</span></div><div className="logbook-list">{logs.map((entry) => <article className="logbook-entry requirement-log-entry" key={entry.id}><i className="logbook-marker" /><div className="requirement-log-entry-content">{editingLogId === entry.id ? <form className="requirement-log-edit-form" onSubmit={(event) => void saveEditedEntry(event, entry)}><div className="requirement-log-edit-fields"><label>Fecha<input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} required /></label><label>Estado<select value={editStatus} onChange={(event) => setEditStatus(event.target.value as RequirementStatus)}>{availableStatuses.map((item) => <option key={item}>{item}</option>)}</select></label></div><label className="requirement-log-edit-note">Avance o impedimento<textarea value={editNote} onChange={(event) => setEditNote(event.target.value)} required maxLength={2000} rows={3} /></label><div className="requirement-log-edit-actions"><button className="button button-outline" type="button" onClick={() => setEditingLogId("")} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !editNote.trim()}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form> : <><span><strong>{entry.memberName} · {entry.status}</strong><time>{formatDate(entry.date)}</time></span><p>{entry.note}</p></>}</div>{editingLogId !== entry.id && <button className="logbook-edit-button" type="button" aria-label={`Editar avance de ${entry.memberName} del ${formatDate(entry.date)}`} title="Editar avance" onClick={() => startEditingEntry(entry)} disabled={saving || Boolean(editingLogId)}><Icon name="edit" size={14} /></button>}</article>)}{!logs.length && <p className="logbook-empty">Este requerimiento aún no tiene avances. Registra el primero arriba.</p>}</div></section>
   </section></div>;
 }
@@ -558,7 +663,7 @@ function RequirementEditor({
   members: TeamMember[];
   saving: boolean;
   onClose: () => void;
-  onSave: (requirement: Requirement) => void;
+  onSave: (requirement: Requirement, changeReason: string) => void;
 }) {
   const [form, setForm] = useState<Requirement>(requirement || {
     id: createId("req"),
@@ -575,9 +680,16 @@ function RequirementEditor({
     passTime: "",
     registeredAt: today(),
   });
+  const [changeReason, setChangeReason] = useState("");
+  const deadlineChanged = Boolean(requirement && form.deadline !== requirement.deadline);
+  const scopeChanged = Boolean(requirement && (
+    form.title !== requirement.title ||
+    form.description !== requirement.description
+  ));
+  const requiresChangeReason = deadlineChanged || scopeChanged;
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSave(form);
+    onSave(form, changeReason);
   }
   const availableStatuses = getRequirementStatuses(form.ocdType);
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="modal-card requirement-editor-modal" role="dialog" aria-modal="true" aria-label={requirement ? "Editar requerimiento" : "Nuevo requerimiento"}>
@@ -587,16 +699,18 @@ function RequirementEditor({
         <label className="full-field">Proyecto<select required value={form.projectId} onChange={(event) => setForm({ ...form, projectId: event.target.value })}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="full-field">Requerimiento / API<input autoFocus required maxLength={200} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej. API-PYM-001 · Consulta de clientes" /></label>
         <label className="full-field">Alcance y descripción<textarea rows={3} maxLength={2000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Qué debe hacer el requerimiento y cuáles son sus criterios de aceptación." /></label>
+        {requiresChangeReason && <label className="full-field">Motivo del cambio de deadline o alcance<textarea value={changeReason} onChange={(event) => setChangeReason(event.target.value)} required maxLength={1000} rows={3} placeholder="Explica brevemente el motivo del ajuste. Se conservará en el historial." /></label>}
         <label>TM responsable<select required value={form.assigneeId} onChange={(event) => setForm({ ...form, assigneeId: event.target.value })}><option value="" disabled>Selecciona un integrante</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}</select></label>
-        <label>QE asignado<input maxLength={120} value={form.qeAssignee} onChange={(event) => setForm({ ...form, qeAssignee: event.target.value })} placeholder="Nombre del QA" /></label>
+        <label>QE asignado (opcional)<select value={form.qeAssignee} onChange={(event) => setForm({ ...form, qeAssignee: event.target.value })}><option value="">Sin asignar</option>{form.qeAssignee && !members.some((member) => member.role === "Quality Engineer" && member.status === "Activo" && member.name === form.qeAssignee) && <option value={form.qeAssignee}>{form.qeAssignee} · asignación actual</option>}{members.filter((member) => member.role === "Quality Engineer" && member.status === "Activo").map((member) => <option key={member.id} value={member.name}>{member.name}</option>)}</select></label>
         <label>Tipo de OCD<select required value={form.ocdType} onChange={(event) => { const ocdType = event.target.value; const statuses = getRequirementStatuses(ocdType); setForm({ ...form, ocdType, status: statuses.includes(form.status) ? form.status : "Desarrollo" }); }}><option value="" disabled>Selecciona tipo de OCD</option>{REQUIREMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>
-        <label>Estado actual<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as RequirementStatus })}>{availableStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+        <label>Estado actual<select value={form.status} onChange={(event) => { const status = event.target.value as RequirementStatus; setForm({ ...form, status, cancellationReason: status === "Cancelado" ? form.cancellationReason || "" : "" }); }}>{availableStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+        {form.status === "Cancelado" && <label className="full-field">Motivo de cancelación<textarea value={form.cancellationReason || ""} onChange={(event) => setForm({ ...form, cancellationReason: event.target.value })} required maxLength={1000} rows={3} placeholder="Explica por qué se cancela este requerimiento." /></label>}
         <label>Fecha de inicio (opcional)<input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label>
         <label>Deadline (opcional)<input type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
         <label>Hora de pase<input type="time" value={form.passTime} onChange={(event) => setForm({ ...form, passTime: event.target.value })} /></label>
         <div className="full-field"><span className="validation-form-label">Validaciones <small>Marca las que requiere este requerimiento.</small></span><div className="validation-checkboxes">{validationLabels.map(([key, label]) => <label className="validation-checkbox" key={key}><input type="checkbox" checked={form.validations[key]} onChange={(event) => setForm({ ...form, validations: { ...form.validations, [key]: event.target.checked } })} /><span><Icon name="check" size={13} /></span>{label}</label>)}</div></div>
       </div>
-      <p className="form-field-note">La fecha de alta se registra automáticamente. Observaciones y avances diarios se conservan en la bitácora del requerimiento.</p>
+      <p className="form-field-note">La fecha de alta se registra automáticamente. Observaciones y avances diarios se conservan en la bitácora del requerimiento.{requiresChangeReason ? " Para guardar cambios de deadline o alcance, registra el motivo." : ""}</p>
       <div className="modal-actions"><button className="button button-outline" type="button" onClick={onClose}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || members.length === 0}>{saving ? "Guardando..." : requirement ? "Guardar cambios" : "Crear requerimiento"}</button></div>
       {!members.length && <p className="form-error" role="alert">Agrega primero un Team Member para asignarle este requerimiento.</p>}
     </form>

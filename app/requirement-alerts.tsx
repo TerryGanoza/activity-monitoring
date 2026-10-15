@@ -70,6 +70,7 @@ export function DailyUpdateNotifications({
         requirement.status !== "Abierto" &&
         requirement.status !== "Done" &&
         requirement.status !== "Bloqueado" &&
+        requirement.status !== "Cancelado" &&
         !updatedRequirementIds.has(requirement.id),
     )
     .sort((a, b) => a.title.localeCompare(b.title, "es"));
@@ -144,8 +145,9 @@ export default function RequirementAlerts({
   const [dismissedDate, setDismissedDate] = useState("");
   const startingToday = today
     ? requirements.filter(
-        (requirement) => requirement.startDate === today && requirement.status === "Abierto",
-      )
+      (requirement) =>
+        requirement.startDate === today && requirement.status === "Abierto",
+    )
     : [];
 
   if (!startingToday.length || dismissedDate === today) return null;

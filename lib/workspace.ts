@@ -56,6 +56,7 @@ export const REQUIREMENT_STATUSES = [
   "Gestión de pase",
   "Done",
   "Bloqueado",
+  "Cancelado",
 ] as const;
 
 export const DEPLOY_GO_STATUSES = [
@@ -65,6 +66,7 @@ export const DEPLOY_GO_STATUSES = [
   "Gestión de pase",
   "Done",
   "Bloqueado",
+  "Cancelado",
 ] as const;
 
 export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
@@ -99,13 +101,14 @@ export function normalizeRequirementStatus(status: string, ocdType: string): Req
 }
 
 export function calculateProjectProgress(requirements: readonly Requirement[]): number {
-  if (requirements.length === 0) return 0;
-  const totalProgress = requirements.reduce((total, requirement) => {
+  const activeRequirements = requirements.filter((requirement) => requirement.status !== "Cancelado");
+  if (activeRequirements.length === 0) return 0;
+  const totalProgress = activeRequirements.reduce((total, requirement) => {
     if (requirement.status === "Done") return total + 1;
     if (requirement.status === "Abierto" || requirement.status === "Bloqueado") return total;
     return total + 0.5;
   }, 0);
-  return Math.round((totalProgress / requirements.length) * 100);
+  return Math.round((totalProgress / activeRequirements.length) * 100);
 }
 
 export function calculateProjectTeamSize(
@@ -115,6 +118,7 @@ export function calculateProjectTeamSize(
   return new Set(
     requirements
       .filter((requirement) => requirement.projectId === projectId)
+      .filter((requirement) => requirement.status !== "Cancelado")
       .map((requirement) => requirement.assigneeId),
   ).size;
 }
@@ -124,7 +128,10 @@ export function calculateTeamMemberProgress(
   memberId: string,
 ): number {
   return calculateProjectProgress(
-    requirements.filter((requirement) => requirement.assigneeId === memberId),
+    requirements.filter(
+      (requirement) =>
+        requirement.assigneeId === memberId && requirement.status !== "Cancelado",
+    ),
   );
 }
 
@@ -137,6 +144,7 @@ export type Requirement = {
   qeAssignee: string;
   ocdType: string;
   status: RequirementStatus;
+  cancellationReason?: string;
   validations: {
     functional: boolean;
     performance: boolean;
@@ -159,10 +167,22 @@ export type RequirementLog = {
   note: string;
 };
 
+export type RequirementChange = {
+  id: string;
+  requirementId: string;
+  date: string;
+  type: "deadline" | "scope";
+  oldValue: string;
+  newValue: string;
+  reason: string;
+  actor: string;
+};
+
 export type WorkspaceData = {
   members: TeamMember[];
   projects: Project[];
   logEntries: LogEntry[];
   requirements: Requirement[];
   requirementLogs: RequirementLog[];
+  requirementChanges: RequirementChange[];
 };

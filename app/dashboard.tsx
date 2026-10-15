@@ -85,6 +85,7 @@ const emptyWorkspace: WorkspaceData = {
   logEntries: [],
   requirements: [],
   requirementLogs: [],
+  requirementChanges: [],
 };
 
 function initialsFromName(name: string) {
@@ -410,6 +411,9 @@ export default function Dashboard() {
       requirementLogs: workspace.requirementLogs.filter(
         (entry) => !requirementIds.has(entry.requirementId),
       ),
+      requirementChanges: workspace.requirementChanges.filter(
+        (change) => !requirementIds.has(change.requirementId),
+      ),
     }, false);
   }
 
@@ -623,6 +627,7 @@ export default function Dashboard() {
               <ProjectStatusReport
                 requirements={workspace.requirements}
                 requirementLogs={workspace.requirementLogs}
+                requirementChanges={workspace.requirementChanges}
                 projects={workspace.projects}
                 members={workspace.members}
               />
