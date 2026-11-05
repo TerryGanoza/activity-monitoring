@@ -310,7 +310,8 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
       setError("Indica el motivo para cancelar este requerimiento.");
       return false;
     }
-    if (requirement.deadline !== deadline && !deadlineChangeReason.trim()) {
+    const deadlineChanged = Boolean(requirement.deadline) && requirement.deadline !== deadline;
+    if (deadlineChanged && !deadlineChangeReason.trim()) {
       setError("Indica el motivo del cambio de deadline.");
       return false;
     }
@@ -342,7 +343,7 @@ export default function ProjectDetail({ projectId }: { projectId: string }) {
         item.id === requirement.id ? updatedRequirement : item,
       ),
       requirementLogs: [entry, ...workspace.requirementLogs],
-      requirementChanges: requirement.deadline !== deadline
+      requirementChanges: deadlineChanged
         ? [{
             id: createId("reqchange"),
             requirementId: requirement.id,
@@ -598,7 +599,7 @@ function RequirementLogModal({
   const [qeAssignee, setQeAssignee] = useState(requirement.qeAssignee);
   const [cancellationReason, setCancellationReason] = useState(requirement.cancellationReason || "");
   const [deadlineChangeReason, setDeadlineChangeReason] = useState("");
-  const deadlineChanged = deadline !== requirement.deadline;
+  const deadlineChanged = Boolean(requirement.deadline) && deadline !== requirement.deadline;
   const [editingLogId, setEditingLogId] = useState("");
   const [editStatus, setEditStatus] = useState<RequirementStatus>(requirement.status);
   const [editDate, setEditDate] = useState("");

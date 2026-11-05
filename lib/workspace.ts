@@ -118,7 +118,10 @@ export function calculateProjectTeamSize(
   return new Set(
     requirements
       .filter((requirement) => requirement.projectId === projectId)
-      .filter((requirement) => requirement.status !== "Cancelado")
+      .filter(
+        (requirement) =>
+          requirement.status !== "Cancelado" && requirement.status !== "Done",
+      )
       .map((requirement) => requirement.assigneeId),
   ).size;
 }
